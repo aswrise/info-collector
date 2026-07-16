@@ -32,6 +32,39 @@ bash scripts/setup-pi-podcast-flow.sh
 之后把 YouTube / 播客页面收藏到 Chrome 书签文件夹「收藏播客」，Dashboard 里选
 `播客 (podcast)` 可以查看状态并点「立即处理」。
 
+## Source Sync（自动订阅源，可选）
+
+Source Sync 独立于浏览器扩展的手动收藏队列，用本地 SQLite 监控 YouTube
+Channel / Playlist 与 X Likes / Lists，并复用同一个 Podcast Processor 与 Tweet
+Organizer。安装需要 `pi`、`yt-dlp` 和已可用的 `opencli`：
+
+```bash
+bash scripts/setup-source-sync.sh
+```
+
+打开本地 Dashboard：
+
+```bash
+cd ~/.info-collector/source-sync/app
+python3 -m source_sync dashboard
+```
+
+然后访问 <http://127.0.0.1:8787>。数据、日志和状态分别位于
+`~/.info-collector/source-sync/{source-sync.db,logs/,status.json}`。卸载调度与代码但保留数据库及产物：
+
+```bash
+bash scripts/setup-source-sync.sh --uninstall
+```
+
+定时策略：YouTube 每天 06:00；X 每天 08:00 / 20:00；Worker 每 30 分钟兜底，
+并在扫描结束后立即运行。X 每页固定最多 20 条、页间随机等待 5–10 秒，认证、
+429 或验证挑战会立即暂停，不在同次运行重试。
+
+产物按首次入队来源只保存一份：YouTube Channel / Playlist 写入
+`播客收集/<频道或列表名>/`，手动收藏写入 `播客收集/公共/`；X Likes 写入
+`文章收集/tweet 整理/likes/`，X List 写入 `文章收集/tweet 整理/<List 名>/`。
+后续在其他来源发现同一内容时不会复制或移动文件；两个 `.base` 文件仍留在各自集合根目录。
+
 ## 工作原理
 
 ```
@@ -41,7 +74,7 @@ Chrome 书签「收藏文章」 → 扩展（队列 + Dashboard） ⇄ 文件桥
 
 Chrome 书签「收藏播客」 → 扩展（队列 + Dashboard） ⇄ 文件桥 ⇄ 播客流（transcript + pi）
                                                               ↓
-                                                     Obsidian「播客收集」三件套
+                                                     Obsidian「播客收集/公共」三件套
 ```
 
 - **扩展**（MV3）是唯一事实来源：从书签只读导入，状态存 `chrome.storage.sync`
@@ -55,14 +88,15 @@ Chrome 书签「收藏播客」 → 扩展（队列 + Dashboard） ⇄ 文件桥
   使用 Anthropic Messages API 的服务端 `web_fetch`。
 - 播客流由 `scripts/setup-pi-podcast-flow.sh` 注册，消费 `podcast` 队列；
   YouTube 会优先复用已有字幕 / transcript，记录频道、频道链接和发布日期，再交给
-  `podcast-digest` Pi skill 写入 Obsidian「播客收集」。
+  `podcast-digest` Pi skill 写入 Obsidian「播客收集/公共」。
 
 ## 开发者
 
 - 领域语言：[CONTEXT.md](CONTEXT.md) · 总体设计：[docs/design.md](docs/design.md)
   · 关键决策：[docs/adr/](docs/adr/)
 - 目录：`extension/`（MV3 扩展）· `host/`（native messaging 文件桥）·
-  `flows/`（处理流脚本）· `templates/`（launchd 模板）· `scripts/`（安装）·
+  `flows/`（手动队列薄壳）· `processors/`（共享处理器）· `source_sync/`（自动订阅源）·
+  `templates/`（launchd 模板）· `scripts/`（安装）·
   `test/`（`npm test`，node --test）
 - 配置文件：`~/.info-collector/config.json`（provider / apiKey / baseUrl / model / outputDir）·
   `~/.info-collector/flows.json`（流程注册表，见 ADR 0004）

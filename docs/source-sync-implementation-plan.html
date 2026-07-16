@@ -1,0 +1,788 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>自动订阅源同步 · 实施计划</title>
+<style>
+  :root {
+    --bg: #f6f8f7;
+    --surface: #ffffff;
+    --surface-2: #eef2f0;
+    --ink: #16211e;
+    --ink-2: #5c6a66;
+    --ink-3: #8a9793;
+    --line: #dfe6e3;
+    --line-strong: #c8d2ce;
+    --accent: #0f766e;
+    --accent-soft: #e0f0ee;
+    --accent-ink: #0b5a54;
+    --ok: #15803d;      --ok-soft: #e3f2e7;
+    --warn: #b45309;    --warn-soft: #f9eedd;
+    --err: #b91c1c;     --err-soft: #f9e5e5;
+    --queued: #1d4ed8;  --queued-soft: #e4eafb;
+    --review: #7c3aed;  --review-soft: #efe8fb;
+    --code-bg: #eef2f0;
+    --shadow: 0 1px 2px rgba(22,33,30,.06), 0 4px 16px rgba(22,33,30,.05);
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101514;
+      --surface: #181e1d;
+      --surface-2: #1f2726;
+      --ink: #e5eae8;
+      --ink-2: #9aa8a3;
+      --ink-3: #6e7c78;
+      --line: #263030;
+      --line-strong: #35413f;
+      --accent: #3cc9ba;
+      --accent-soft: #16302d;
+      --accent-ink: #7fdfd4;
+      --ok: #4ade80;      --ok-soft: #142e1c;
+      --warn: #fbbf24;    --warn-soft: #33260d;
+      --err: #f87171;     --err-soft: #371414;
+      --queued: #93b4f8;  --queued-soft: #16223f;
+      --review: #c4a5f9;  --review-soft: #271b3d;
+      --code-bg: #1f2726;
+      --shadow: 0 1px 2px rgba(0,0,0,.35), 0 4px 16px rgba(0,0,0,.25);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f6f8f7; --surface: #ffffff; --surface-2: #eef2f0;
+    --ink: #16211e; --ink-2: #5c6a66; --ink-3: #8a9793;
+    --line: #dfe6e3; --line-strong: #c8d2ce;
+    --accent: #0f766e; --accent-soft: #e0f0ee; --accent-ink: #0b5a54;
+    --ok: #15803d; --ok-soft: #e3f2e7; --warn: #b45309; --warn-soft: #f9eedd;
+    --err: #b91c1c; --err-soft: #f9e5e5; --queued: #1d4ed8; --queued-soft: #e4eafb;
+    --review: #7c3aed; --review-soft: #efe8fb; --code-bg: #eef2f0;
+    --shadow: 0 1px 2px rgba(22,33,30,.06), 0 4px 16px rgba(22,33,30,.05);
+  }
+  :root[data-theme="dark"] {
+    --bg: #101514; --surface: #181e1d; --surface-2: #1f2726;
+    --ink: #e5eae8; --ink-2: #9aa8a3; --ink-3: #6e7c78;
+    --line: #263030; --line-strong: #35413f;
+    --accent: #3cc9ba; --accent-soft: #16302d; --accent-ink: #7fdfd4;
+    --ok: #4ade80; --ok-soft: #142e1c; --warn: #fbbf24; --warn-soft: #33260d;
+    --err: #f87171; --err-soft: #371414; --queued: #93b4f8; --queued-soft: #16223f;
+    --review: #c4a5f9; --review-soft: #271b3d; --code-bg: #1f2726;
+    --shadow: 0 1px 2px rgba(0,0,0,.35), 0 4px 16px rgba(0,0,0,.25);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Segoe UI", "Microsoft YaHei", sans-serif;
+    font-size: 15px;
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 1020px; margin: 0 auto; padding: 48px 28px 96px; }
+
+  /* ── 排版 ───────────────────────── */
+  h1 { font-size: 28px; line-height: 1.3; margin: 8px 0 4px; letter-spacing: -.01em; text-wrap: balance; }
+  h2 { font-size: 20px; margin: 0 0 4px; letter-spacing: -.01em; }
+  h3 { font-size: 16px; margin: 28px 0 8px; }
+  h4 { font-size: 14px; margin: 20px 0 6px; }
+  p { margin: 8px 0; max-width: 72ch; }
+  .muted { color: var(--ink-2); }
+  .small { font-size: 13px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .eyebrow {
+    font-size: 12px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--accent); font-weight: 600;
+  }
+  .doc-meta { display: flex; gap: 16px; flex-wrap: wrap; color: var(--ink-2); font-size: 13px; margin-top: 10px; }
+  .doc-meta span::before { content: "· "; color: var(--ink-3); }
+  .doc-meta span:first-child::before { content: ""; }
+
+  /* ── 区块 ───────────────────────── */
+  section { margin-top: 56px; scroll-margin-top: 24px; }
+  .section-head { display: flex; align-items: baseline; gap: 12px; border-bottom: 1px solid var(--line-strong); padding-bottom: 10px; margin-bottom: 18px; }
+  .section-head .no { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; color: var(--ink-3); }
+  .tier {
+    font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px;
+    letter-spacing: .04em; white-space: nowrap;
+  }
+  .tier-done { background: var(--ok-soft); color: var(--ok); }
+  .tier-cold { background: var(--surface-2); color: var(--ink-2); }
+
+  /* ── 卡片 / 决策点 ─────────────── */
+  .card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 18px 20px; margin: 14px 0; box-shadow: var(--shadow);
+  }
+  .decision { border-left: 3px solid var(--accent); }
+  .decision-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .decision-title strong { font-size: 15px; }
+  .knob {
+    font-size: 11px; font-weight: 600; color: var(--ok);
+    background: var(--ok-soft); padding: 1px 8px; border-radius: 99px;
+  }
+  ul, ol { margin: 8px 0; padding-left: 22px; }
+  li { margin: 3px 0; }
+  li::marker { color: var(--ink-3); }
+
+  /* ── 代码 ───────────────────────── */
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: .88em; background: var(--code-bg);
+    padding: 1px 5px; border-radius: 4px;
+  }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--line);
+    border-radius: 8px; padding: 14px 16px; overflow-x: auto;
+    font-size: 12.5px; line-height: 1.65; margin: 10px 0;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  .cm { color: var(--ink-3); }
+  .kw { color: var(--accent); }
+  .fd { color: var(--review); }
+
+  /* ── 表格 ───────────────────────── */
+  .tbl-wrap { overflow-x: auto; margin: 12px 0; border: 1px solid var(--line); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; background: var(--surface); }
+  th, td { text-align: left; padding: 8px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; color: var(--ink-2); font-weight: 600; letter-spacing: .03em; background: var(--surface-2); white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  td code { white-space: nowrap; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ── 状态 pill（正文用） ────────── */
+  .pill {
+    display: inline-block; font-size: 11.5px; font-weight: 600;
+    padding: 1px 9px; border-radius: 99px; white-space: nowrap;
+  }
+  .p-ok     { background: var(--ok-soft); color: var(--ok); }
+  .p-warn   { background: var(--warn-soft); color: var(--warn); }
+  .p-err    { background: var(--err-soft); color: var(--err); }
+  .p-queued { background: var(--queued-soft); color: var(--queued); }
+  .p-review { background: var(--review-soft); color: var(--review); }
+  .p-plain  { background: var(--surface-2); color: var(--ink-2); }
+
+  /* ── 目录 ───────────────────────── */
+  .toc { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px 20px; margin-top: 16px; }
+  .toc a {
+    display: flex; gap: 10px; align-items: baseline; padding: 7px 10px;
+    border-radius: 7px; color: var(--ink); font-size: 13.5px;
+    transition: background 150ms var(--ease-out);
+  }
+  .toc a:hover { background: var(--surface-2); text-decoration: none; }
+  .toc .no { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--ink-3); min-width: 18px; }
+  .toc .t-done { color: var(--ok); font-size: 11px; margin-left: auto; }
+
+  /* ═══ Mockup 通用 ═══════════════ */
+  .mock-frame {
+    border: 1px solid var(--line-strong); border-radius: 12px; overflow: hidden;
+    background: var(--surface); box-shadow: var(--shadow); margin: 16px 0 8px;
+  }
+  .mock-chrome {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; background: var(--surface-2); border-bottom: 1px solid var(--line);
+  }
+  .mock-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line-strong); }
+  .mock-url {
+    font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--ink-3);
+    background: var(--surface); border: 1px solid var(--line); border-radius: 5px;
+    padding: 2px 10px; margin-left: 6px;
+  }
+  .mock-body { font-size: 12px; line-height: 1.5; }
+  .mock-body * { font-family: inherit; }
+
+  .m-pill {
+    display: inline-block; font-size: 10px; font-weight: 600;
+    padding: 0 7px; border-radius: 99px; line-height: 16px; white-space: nowrap;
+  }
+  .m-btn {
+    display: inline-block; font-size: 11px; font-weight: 500;
+    border: 1px solid var(--line-strong); border-radius: 6px;
+    background: var(--surface); color: var(--ink);
+    padding: 3px 10px; cursor: pointer; user-select: none;
+    transition: transform 140ms var(--ease-out), background 140ms var(--ease-out);
+  }
+  .m-btn:hover { background: var(--surface-2); }
+  .m-btn:active { transform: scale(0.97); }
+  .m-btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  :root[data-theme="dark"] .m-btn-primary, :root:not([data-theme="light"]) .m-btn-primary { color: var(--bg); }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .m-btn-primary { color: #fff; } }
+  .m-btn-primary:hover { filter: brightness(1.06); background: var(--accent); }
+
+  .m-check { width: 11px; height: 11px; border: 1.5px solid var(--line-strong); border-radius: 3px; display: inline-block; vertical-align: -1px; }
+  .m-check.on { background: var(--accent); border-color: var(--accent); }
+
+  .mock-caption { font-size: 12.5px; color: var(--ink-2); margin: 6px 2px 0; }
+
+  hr.soft { border: none; border-top: 1px solid var(--line); margin: 28px 0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .m-btn, .toc a { transition: none; }
+    .m-btn:active { transform: none; }
+  }
+</style>
+
+<div class="page">
+
+<!-- ═══════════ 头部 ═══════════ -->
+<header>
+  <div class="eyebrow">Info Collector · 实施计划 · 最终版</div>
+  <h1>自动订阅源同步系统 — Source Sync</h1>
+  <p class="muted" style="max-width:66ch">独立于浏览器扩展的本地订阅源系统：监控 YouTube Channel / Playlist 与 X Likes / Lists，自动发现新内容并复用现有 Podcast 与 Tweet 处理能力。<strong>本文所有决策均已确认，可直接交付实施</strong>——实施 agent 按 §5 切片顺序开工，§1–§4 是规格，§6 是机械性工作清单，§7 是交接说明。</p>
+  <div class="doc-meta">
+    <span>依据 <code>docs/自动订阅源同步-实施计划.md</code>（设计基线）</span>
+    <span>2026-07-16</span>
+    <span>状态：已确认 · 交付实施</span>
+  </div>
+
+  <nav class="toc" aria-label="目录">
+    <a href="#s1"><span class="no">1</span> 数据模型 <span class="t-done">已定</span></a>
+    <a href="#s2"><span class="no">2</span> 新模块 Interface <span class="t-done">已定</span></a>
+    <a href="#s3"><span class="no">3</span> 运行参数与输出规格 <span class="t-done">已定</span></a>
+    <a href="#s4"><span class="no">4</span> 界面设计（混合方案）<span class="t-done">已定</span></a>
+    <a href="#s5"><span class="no">5</span> 实施切片</a>
+    <a href="#s6"><span class="no">6</span> 机械性工作</a>
+    <a href="#s7"><span class="no">7</span> 交接说明</a>
+  </nav>
+</header>
+
+<!-- ═══════════ §1 数据模型 ═══════════ -->
+<section id="s1">
+  <div class="section-head">
+    <span class="no">§1</span><h2>数据模型</h2><span class="tier tier-done">已定 · 按此建库</span>
+  </div>
+  <p>单文件 SQLite（<code>~/.info-collector/source-sync/source-sync.db</code>，标准库 <code>sqlite3</code>），6 张业务表 + 1 张元数据表。全部使用 <code>STRICT</code> 表和 <code>CHECK</code> 枚举约束，时间戳统一存 ISO-8601 UTC 文本。以下 DDL 即最终规格。</p>
+
+  <h3>连接初始化（每个进程建连后执行）</h3>
+<pre><code><span class="kw">PRAGMA</span> journal_mode = WAL;    <span class="cm">-- 读写并发：Dashboard 查询不被扫描/Worker 写入阻塞</span>
+<span class="kw">PRAGMA</span> synchronous = NORMAL;  <span class="cm">-- WAL 模式下安全且明显更快</span>
+<span class="kw">PRAGMA</span> foreign_keys = ON;
+<span class="kw">PRAGMA</span> busy_timeout = 5000;</code></pre>
+
+  <h3>meta — 版本与迁移（可拓展性的地基）</h3>
+<pre><code><span class="kw">CREATE TABLE</span> meta (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+) <span class="kw">STRICT</span>;
+<span class="cm">-- schema_version 从 1 开始。之后所有结构变更写成顺序迁移脚本
+-- migrations/0002_*.sql …，启动时按版本号依次应用，禁止手改线上库。</span></code></pre>
+
+  <div class="card decision">
+    <div class="decision-title"><strong>决策 1.1 — 全局内容主键 <code>content_key</code></strong><span class="knob">已定</span></div>
+    <p>单列文本主键，格式 <code>youtube:&lt;video_id&gt;</code> / <code>x:&lt;tweet_id&gt;</code>。可读、可 grep、可直接出现在日志里；前缀方案天然可拓展——未来接 RSS 或其他平台时新增 <code>rss:&lt;hash&gt;</code> 之类前缀即可，不动表结构。</p>
+  </div>
+
+  <h3>sources — 监控来源</h3>
+<pre><code><span class="kw">CREATE TABLE</span> sources (
+  id                INTEGER PRIMARY KEY,
+  source_type       TEXT NOT NULL <span class="kw">CHECK</span> (source_type IN
+                      ('youtube_channel','youtube_playlist','x_likes','x_list')),
+  canonical_url     TEXT NOT NULL UNIQUE, <span class="cm">-- 规范化 URL，防重复添加</span>
+  external_id       TEXT NOT NULL,        <span class="cm">-- channel_id / playlist_id / handle / list_id</span>
+  display_name      TEXT NOT NULL,
+  enabled           INTEGER NOT NULL DEFAULT 1 <span class="kw">CHECK</span> (enabled IN (0,1)),
+  auto_sync_new     INTEGER NOT NULL DEFAULT 0 <span class="kw">CHECK</span> (auto_sync_new IN (0,1)),
+  collection_policy TEXT NOT NULL <span class="kw">CHECK</span> (collection_policy IN
+                      ('auto_sync_new','always_collect','value_filter')),
+  settings_json     TEXT NOT NULL DEFAULT '{}',
+  last_scan_at      TEXT,
+  last_scan_status  TEXT <span class="kw">CHECK</span> (last_scan_status IN
+                      ('complete','incomplete','failed','paused_risk') OR last_scan_status IS NULL),
+  last_scan_error   TEXT,
+  created_at        TEXT NOT NULL
+) <span class="kw">STRICT</span>;</code></pre>
+
+  <div class="card decision">
+    <div class="decision-title"><strong>决策 1.2 — <code>settings_json</code> 内容</strong><span class="knob">已定</span></div>
+    <ul class="small">
+      <li>YouTube Channel：<code>{"scan_depth": 5}</code></li>
+      <li>X Likes：<code>{"page_interval_seconds": [5, 10], "backfill_pages_per_run": 15}</code></li>
+      <li>X List：<code>{"topics": […], "minimum_collect_score": 7, "auto_sync_accepted": false, "send_borderline_to_review": true, "shadow_mode": true}</code></li>
+    </ul>
+    <p class="small muted">JSON 列只在扫描时读，不参与 Dashboard 筛选，因此不需要可索引。新来源类型的专属设置继续进这个列，不加新列。</p>
+  </div>
+
+  <h3>content_items — 全局内容实体</h3>
+<pre><code><span class="kw">CREATE TABLE</span> content_items (
+  content_key    TEXT PRIMARY KEY,
+  platform       TEXT NOT NULL <span class="kw">CHECK</span> (platform IN ('youtube','x')),
+  canonical_url  TEXT NOT NULL,
+  title_or_text  TEXT,
+  author         TEXT,
+  published_at   TEXT,            <span class="cm">-- 原帖/视频发布时间，不是发现时间</span>
+  language       TEXT <span class="kw">CHECK</span> (language IN ('zh','en','mixed','unknown') OR language IS NULL),
+  metadata_json  TEXT NOT NULL DEFAULT '{}',  <span class="cm">-- 引用 Tweet、外链卡片、媒体、作者简介等</span>
+  created_at     TEXT NOT NULL
+) <span class="kw">STRICT</span>;
+
+<span class="kw">CREATE INDEX</span> idx_items_platform ON content_items(platform, published_at);</code></pre>
+
+  <h3>source_relationships — 来源关系</h3>
+<pre><code><span class="kw">CREATE TABLE</span> source_relationships (
+  source_id     INTEGER NOT NULL REFERENCES sources(id),
+  content_key   TEXT NOT NULL REFERENCES content_items(content_key),
+  status        TEXT NOT NULL DEFAULT 'present'
+                  <span class="kw">CHECK</span> (status IN ('present','removed','unavailable')),
+  first_seen_at TEXT NOT NULL,  <span class="cm">-- 首次观察时间；Likes 场景 ≈ 点赞时间，但不冒充它</span>
+  last_seen_at  TEXT NOT NULL,
+  position      INTEGER,        <span class="cm">-- Playlist 顺序；其余来源为 NULL</span>
+  PRIMARY KEY (source_id, content_key)
+) <span class="kw">STRICT</span>;
+
+<span class="cm">-- 反查内容出现在哪些来源：Likes 优先级规则、详情抽屉都靠它</span>
+<span class="kw">CREATE INDEX</span> idx_rel_content ON source_relationships(content_key);</code></pre>
+
+  <h3>sync_jobs — 同步任务</h3>
+<pre><code><span class="kw">CREATE TABLE</span> sync_jobs (
+  id           INTEGER PRIMARY KEY,
+  content_key  TEXT NOT NULL REFERENCES content_items(content_key),
+  processor    TEXT NOT NULL <span class="kw">CHECK</span> (processor IN ('podcast','tweet_organizer')),
+  status       TEXT NOT NULL <span class="kw">CHECK</span> (status IN ('queued','syncing','synced','failed')),
+  trigger      TEXT NOT NULL <span class="kw">CHECK</span> (trigger IN ('auto','user','initial_import')),
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  last_error   TEXT,
+  result_json  TEXT,            <span class="cm">-- 产物路径、translation_status 等</span>
+  created_at   TEXT NOT NULL,
+  started_at   TEXT,
+  finished_at  TEXT
+) <span class="kw">STRICT</span>;
+
+<span class="cm">-- 幂等核心：同一 (content_key, processor) 的活跃任务全库唯一。
+-- failed 不在部分索引内，因此可重新入队。</span>
+<span class="kw">CREATE UNIQUE INDEX</span> uq_active_job
+  ON sync_jobs(content_key, processor)
+  WHERE status IN ('queued','syncing','synced');
+
+<span class="cm">-- Worker 认领 + Dashboard 状态计数都走这条索引</span>
+<span class="kw">CREATE INDEX</span> idx_jobs_status ON sync_jobs(status, created_at);</code></pre>
+
+  <div class="card decision">
+    <div class="decision-title"><strong>决策 1.3 — 入队与认领的并发语义</strong><span class="knob">已定</span></div>
+    <p>入队用 <code>INSERT … ON CONFLICT DO NOTHING</code> 打在部分唯一索引上，按受影响行数统计 <code>{queued, skipped_synced, skipped_active}</code>——无竞态、单条 SQL。Worker 认领用 <code>UPDATE … SET status='syncing', started_at=… WHERE id IN (SELECT … WHERE status='queued' ORDER BY created_at LIMIT ?) RETURNING *</code>，单事务完成。<code>syncing</code> 超过 30 分钟视为超时，由下一次 Worker 启动时恢复为 <code>queued</code>（<code>attempts</code> 不清零）。</p>
+  </div>
+
+  <h3>value_decisions — X List 价值判定</h3>
+<pre><code><span class="kw">CREATE TABLE</span> value_decisions (
+  content_key      TEXT NOT NULL REFERENCES content_items(content_key),
+  source_id        INTEGER NOT NULL REFERENCES sources(id),
+  relevance        INTEGER NOT NULL <span class="kw">CHECK</span> (relevance BETWEEN 0 AND 3),
+  information_gain INTEGER NOT NULL <span class="kw">CHECK</span> (information_gain BETWEEN 0 AND 3),
+  usefulness       INTEGER NOT NULL <span class="kw">CHECK</span> (usefulness BETWEEN 0 AND 2),
+  evidence         INTEGER NOT NULL <span class="kw">CHECK</span> (evidence BETWEEN 0 AND 2),
+  total            INTEGER NOT NULL <span class="kw">CHECK</span> (total BETWEEN 0 AND 10),
+  decision         TEXT NOT NULL <span class="kw">CHECK</span> (decision IN ('collect','review','noise')),
+  reason_code      TEXT <span class="kw">CHECK</span> (reason_code IN ('social_chatter','contextless_reaction',
+                     'pure_promotion','engagement_bait','repetition','off_topic',
+                     'insufficient_context') OR reason_code IS NULL),
+  explanation      TEXT,
+  confidence       REAL,
+  overridden_by    TEXT <span class="kw">CHECK</span> (overridden_by IN ('user_collect','user_noise') OR overridden_by IS NULL),
+  overridden_at    TEXT,
+  decided_at       TEXT NOT NULL,
+  PRIMARY KEY (content_key, source_id)
+) <span class="kw">STRICT</span>;
+
+<span class="cm">-- review 队列与影子模式统计</span>
+<span class="kw">CREATE INDEX</span> idx_decisions_review ON value_decisions(source_id, decision);</code></pre>
+
+  <div class="card decision">
+    <div class="decision-title"><strong>决策 1.4 — 判定按 (内容 × 来源) 存，覆盖不改原始分数</strong><span class="knob">已定</span></div>
+    <p>同一条 Tweet 在不同 List 各自判定。用户覆盖只写 <code>overridden_by</code>，四项原始分数保留用于日后校准（第一版只存纠正记录，不训练模型）。「Likes 优先」不在这张表上做：入队逻辑发现 Likes 来源关系存在时直接绕过 value_decisions。</p>
+  </div>
+
+  <h3>source_checkpoints — 扫描断点与水位</h3>
+<pre><code><span class="kw">CREATE TABLE</span> source_checkpoints (
+  source_id            INTEGER PRIMARY KEY REFERENCES sources(id),
+  overlap_ids_json     TEXT,  <span class="cm">-- X：上次完整扫描末尾 5 个已落库 tweet_id（水位）</span>
+  pending_cursor       TEXT,  <span class="cm">-- X：中断/分批回溯时保存的 next_cursor，恢复前须验证有效</span>
+  pending_stop_reason  TEXT <span class="kw">CHECK</span> (pending_stop_reason IN
+                         ('rate_limited','auth','challenge','error','page_budget')
+                         OR pending_stop_reason IS NULL),
+  snapshot_json        TEXT,  <span class="cm">-- YouTube Playlist：上次完整快照（video_id 有序列表）</span>
+  last_complete_at     TEXT,
+  last_complete_pages  INTEGER
+) <span class="kw">STRICT</span>;</code></pre>
+
+  <div class="card decision">
+    <div class="decision-title"><strong>决策 1.5 — 水位 = 5 个 overlap ID，命中即停</strong><span class="knob">已定</span></div>
+    <p>停止条件是「当前页出现任意一个 overlap_id」，判断的是<strong>已发现落库</strong>而非已整理完成——发现和处理解耦。5 个而不是 1 个，防止取消点赞恰好删掉水位帖。异常或页数预算（<code>page_budget</code>，见 §3）中止时：已落库页面保留、水位不前移、<code>pending_cursor</code> 存下来，Dashboard 显示 <span class="pill p-warn">incomplete</span>。</p>
+  </div>
+
+  <p class="small muted">性能说明：本系统数据量级为数千行，以上索引已覆盖全部高频查询（Worker 认领、状态计数、内容反查、review 队列）。刻意不做的：不加 FTS 全文索引（关键词筛选用 <code>LIKE</code> 足够，量级大了再迁移）、不分库、不加缓存层。</p>
+</section>
+
+<!-- ═══════════ §2 新模块 Interface ═══════════ -->
+<section id="s2">
+  <div class="section-head">
+    <span class="no">§2</span><h2>新模块 Interface</h2><span class="tier tier-done">已定 · 按此实现</span>
+  </div>
+  <p>五个新 Interface，全部是纯 Python（dataclass + Protocol），无 Web 框架。SQLite 表、事务、状态迁移隐藏在 Source Registry 内部，Adapter 和 Processor 都不直接碰数据库。</p>
+
+  <h3>共享类型（<code>source_sync/types.py</code>）</h3>
+<pre><code><span class="kw">@dataclass(frozen=True)</span>
+<span class="kw">class</span> <span class="fd">DiscoveredItem</span>:            <span class="cm"># Adapter 产出的最小单位</span>
+    content_key: str              <span class="cm"># "youtube:abc123" / "x:189…"</span>
+    canonical_url: str
+    title_or_text: str
+    author: str
+    published_at: str | None
+    position: int | None          <span class="cm"># 来源内顺序（Playlist 用）</span>
+    metadata: dict                <span class="cm"># 平台原始数据，X 含引用/媒体/外链卡片</span>
+
+<span class="kw">@dataclass(frozen=True)</span>
+<span class="kw">class</span> <span class="fd">ScanPage</span>:                  <span class="cm"># 一页扫描结果（X）或完整快照（YouTube）</span>
+    items: list[DiscoveredItem]
+    next_checkpoint: str | None   <span class="cm"># X cursor；None = 无下一页</span>
+    exhausted: bool               <span class="cm"># 已到来源末尾</span>
+    is_snapshot: bool             <span class="cm"># True = Playlist 全量快照，做 diff 而非追加</span>
+
+<span class="kw">@dataclass(frozen=True)</span>
+<span class="kw">class</span> <span class="fd">SourcePreview</span>:             <span class="cm"># inspect() 返回，供添加来源确认页展示</span>
+    source_type: str
+    canonical_url: str
+    external_id: str
+    display_name: str
+    item_count: int | None
+    recent_items: list[DiscoveredItem]</code></pre>
+
+  <h3>Source Adapter（每种来源一个实现）</h3>
+<pre><code><span class="kw">class</span> <span class="fd">SourceAdapter</span>(Protocol):
+    <span class="kw">def</span> inspect(self, url: str) -> SourcePreview: ...
+    <span class="kw">def</span> scan(self, source: Source, checkpoint: str | None) -> ScanPage: ...</code></pre>
+  <p class="small muted">四个实现：YouTubeChannelAdapter / YouTubePlaylistAdapter（yt-dlp，返回快照）、XLikesAdapter / XListAdapter（OpenCLI，严格 20 条一页，返回带 cursor 的分页）。X 两个 adapter 共享分页与风控代码，endpoint 和解析器分开。</p>
+
+  <h3>Source Registry（唯一持有 SQLite 的模块）</h3>
+<pre><code><span class="kw">class</span> <span class="fd">SourceRegistry</span>:
+    <span class="kw">def</span> add_source(self, url, initial_policy) -> Source
+    <span class="kw">def</span> record_scan(self, source_id, page: ScanPage) -> DiscoveryResult
+        <span class="cm"># 单页事务落库：内容 + 关系 + （按策略）入队，返回新增/水位命中情况</span>
+    <span class="kw">def</span> enqueue(self, content_keys, processor, trigger) -> EnqueueResult
+        <span class="cm"># EnqueueResult = {queued: int, skipped_synced: int, skipped_active: int}</span>
+    <span class="kw">def</span> claim_jobs(self, limit) -> list[Job]     <span class="cm"># queued → syncing，事务内</span>
+    <span class="kw">def</span> finish_job(self, job_id, result) -> str  <span class="cm"># → synced | failed</span></code></pre>
+
+  <h3>Podcast Processor（从现有 flow 抽出的共享 seam）</h3>
+<pre><code><span class="kw">class</span> <span class="fd">PodcastProcessor</span>:
+    <span class="kw">def</span> lookup(self, canonical_youtube_url) -> Lookup
+        <span class="cm"># not_synced | synced（synced 时带三个产物路径）——添加来源时用它标已同步</span>
+    <span class="kw">def</span> process(self, canonical_youtube_url, metadata) -> ProcessResult
+        <span class="cm"># 幂等：先查有效 result.json + 三个产物文件，齐全直接返回，不重新生成</span></code></pre>
+
+  <div class="card decision">
+    <div class="decision-title"><strong>决策 2.1 — 幂等以「产物文件」为准，不以数据库为准</strong><span class="knob">已定</span></div>
+    <p>手动收藏系统和自动系统各有一套队列状态，两边不共享数据库。同一视频不重复生成的保证只能放在共享的 Processor 上：<code>process()</code> 开头检查 workdir 里的 <code>result.json</code> 和三个产物文件，齐全即返回。新系统的 <code>synced</code> 定义 = 文件齐全。</p>
+  </div>
+
+  <h3>Tweet Organizer 与 Value Evaluator</h3>
+<pre><code><span class="kw">class</span> <span class="fd">TweetOrganizer</span>:
+    <span class="kw">def</span> process(self, tweet_record) -> OrganizedResult
+        <span class="cm"># 输入 = OpenCLI 已取得的结构化数据，绝不重新访问 X 页面</span>
+        <span class="cm"># Pi 负责语言判断/翻译/标题/整理；Python 负责 IO、状态、结果校验</span>
+        <span class="cm"># 返回 sync_status + translation_status(not_needed|translated|partially_translated)</span>
+
+<span class="kw">class</span> <span class="fd">ValueEvaluator</span>:
+    <span class="kw">def</span> evaluate(self, list_policy, tweet_records) -> list[ValueDecision]
+        <span class="cm"># 按批调用 Pi，返回结构化 JSON；不入队，入队是 Registry 的事</span></code></pre>
+  <p class="small muted">职责边界刻意收窄：扫描器不做语义判断，Evaluator 不入队，Organizer 不抓网页。每个模块可以单独用假实现做集成测试。</p>
+
+  <h3>拟议 OpenCLI 单页命令（本仓库私有 adapter）</h3>
+<pre><code>opencli twitter likes-page Tenitsugunsmith --count 20 --cursor '&lt;cursor&gt;' -f json
+<span class="cm"># → { "items": […], "next_cursor": "…", "exhausted": false }</span></code></pre>
+  <p class="small muted">源码和测试放本仓库，由 setup 脚本装成 OpenCLI 私有命令；不直接改全局 npm 包。上游若提供等价单页 Interface 即删除本地 adapter。只读，最多 20 条，串行，不加任何 X 写操作。</p>
+</section>
+
+<!-- ═══════════ §3 运行参数与输出规格 ═══════════ -->
+<section id="s3">
+  <div class="section-head">
+    <span class="no">§3</span><h2>运行参数与输出规格</h2><span class="tier tier-done">全部已确认</span>
+  </div>
+
+  <h3>已确认的运行参数</h3>
+  <div class="tbl-wrap"><table>
+    <tr><th>事项</th><th>最终值</th><th>说明</th></tr>
+    <tr><td>自动扫描频率</td><td><strong>YouTube 每天 1 次（06:00）；X 每 12 小时 1 次（08:00 / 20:00）</strong></td><td class="small muted">launchd 定时；Dashboard 随时可手动触发</td></tr>
+    <tr><td>X 单页间隔</td><td><strong>每页之间随机等待 5–10 秒</strong></td><td class="small muted">读一页 20 条 → 落库 → 等 5–10 秒 → 读下一页。模拟人工翻页节奏，降低风控概率</td></tr>
+    <tr><td>Likes 首次历史回溯节奏</td><td><strong>每次运行最多 15 页（约 300 条），未追平则保存 cursor，下一次 12 小时调度接续</strong></td><td class="small muted">首次接入时历史 Likes 可能有几千条，不能一口气读完。分批读：每批 15 页后主动停（停止原因 <code>page_budget</code>），直到追平历史末尾。以 5000 条历史估算约 4–5 天追平，期间新增 Likes 照常从顶部发现</td></tr>
+    <tr><td>Tweet 整理稿目录</td><td><strong><code>文章收集/tweet 整理/</code></strong></td><td class="small muted">完整路径 <code>/Users/aqua/D/Documents/ob/obsidian-sync-win-v1/文章收集/tweet 整理/</code></td></tr>
+    <tr><td>独立 Obsidian Base</td><td><strong>建，<code>文章收集/tweet 整理/tweet 整理.base</code></strong></td><td class="small muted">规格见下</td></tr>
+    <tr><td>X List 初始阈值</td><td><strong>minimum_collect_score = 7</strong></td><td class="small muted">7–10 且相关性 ≥1 → collect；4–6 → review；0–3 → noise。各 List 的 topics 在添加来源时填写</td></tr>
+    <tr><td>Dashboard 名称</td><td><strong>Source Sync</strong></td><td class="small muted">占位名，页面标题「Source Sync · 订阅源同步」，改名只动一处常量</td></tr>
+    <tr><td>界面方案</td><td><strong>混合方案（§4）</strong></td><td class="small muted">A 表格骨架 + B 健康卡片区 + C 详情抽屉</td></tr>
+  </table></div>
+
+  <h3>Tweet 整理稿文件规格</h3>
+  <p class="small">文件名 <code>中文短标题（@handle）.md</code>，重名时追加 <code>-&lt;tweet_id 后 6 位&gt;</code>。frontmatter 对齐现有 translate-article 惯例（title / source / published / date / authors），追加 Tweet 专属字段：</p>
+<pre><code>---
+title: &lt;中文短标题，由 Tweet Organizer 生成&gt;
+source: https://x.com/&lt;handle&gt;/status/&lt;tweet_id&gt;
+published: &lt;原帖发布日期 YYYY-MM-DD&gt;
+date: &lt;收录时间 YYYY-MM-DDTHH:mm，必须取自系统时间，禁止凭记忆填写&gt;
+authors: &lt;作者真实姓名（@handle）&gt;
+platform: x
+tweet_id: "&lt;tweet_id&gt;"
+language: zh | en | mixed
+translation_status: not_needed | translated | partially_translated
+origin: likes | list
+lists: [&lt;来源 List 名称，Likes 来源则为 Likes&gt;]
+tags: [&lt;必要标签&gt;]
+---</code></pre>
+  <p class="small">正文规则照旧：中文整理不翻译；英文保留原文 + 中文翻译；混合只翻英文部分；保留引用、外链卡片和媒体 URL；不扩写。</p>
+
+  <h3>Obsidian Base 规格（<code>tweet 整理.base</code>）</h3>
+  <ul class="small">
+    <li>过滤：<code>file.folder</code> 为 <code>文章收集/tweet 整理</code></li>
+    <li>默认视图「全部」：表格，按 <code>date</code> 倒序，列 = title / authors / published / language / translation_status / origin / tags</li>
+    <li>视图「已翻译」：<code>translation_status != not_needed</code></li>
+    <li>视图「来自 List」：<code>origin == list</code>，多一列 lists</li>
+  </ul>
+
+  <h3>用户可见行为（自设计基线继承，未变）</h3>
+  <div class="card decision">
+    <div class="decision-title"><strong>3.1 首次同步选项（添加 YouTube 来源时）</strong><span class="knob">已定</span></div>
+    <ul>
+      <li>只建立监控，不同步历史</li>
+      <li><strong>同步最新 5 条（默认）</strong></li>
+      <li>同步最新 N 条 / 同步全部</li>
+    </ul>
+    <p class="small">措辞约束：Playlist 没有可靠加入时间，界面必须写「当前列表前 N 条」，不能写「最近加入 N 条」。X Likes 没有条数选项——逐页追到历史重合或末尾才算完成；X List 可设初始范围，默认进影子判定模式。</p>
+  </div>
+
+  <div class="card decision">
+    <div class="decision-title"><strong>3.2 批量操作的反馈文案</strong><span class="knob">已定</span></div>
+    <pre style="margin-top:6px"><code>已加入 4 条 · 跳过已同步 2 条 · 跳过排队中/处理中 1 条</code></pre>
+    <p class="small muted">三个数字直接来自 <code>enqueue()</code> 的返回值（决策 1.3），界面不自己数。</p>
+  </div>
+
+  <div class="card decision">
+    <div class="decision-title"><strong>3.3 X List 影子模式默认开</strong><span class="knob">已定</span></div>
+    <p>新 List 接入后 Value Evaluator 只打分不入队。人工检查约 50–100 条、可导出样本校准后，手动开启 <code>auto_sync_accepted</code>。<code>insufficient_context</code> 必须落 review，noise 保留可见、可人工覆盖。同一 Tweet 只要出现在 Likes 就必须收集，即使在 List 中被判为 noise。</p>
+  </div>
+
+  <div class="card decision">
+    <div class="decision-title"><strong>3.4 删除来源 ≠ 删除内容</strong><span class="knob">已定</span></div>
+    <p>「删除监控关系」只删来源和关系记录，内容与产物一律保留；来源里被移除的条目只把关系置为 <span class="pill p-plain">removed</span>。Dashboard 不提供删除产物的入口。</p>
+  </div>
+</section>
+
+<!-- ═══════════ §4 界面设计（最终） ═══════════ -->
+<section id="s4">
+  <div class="section-head">
+    <span class="no">§4</span><h2>界面设计 — 混合方案（最终）</h2><span class="tier tier-done">已选定</span>
+  </div>
+  <p>单页应用，127.0.0.1 上的原生 HTML/CSS/JS，无前端框架。三层结构：<strong>顶部来源健康卡片区</strong>（运维视角，异常一眼可见）＋<strong>中部筛选与内容表</strong>（批量操作主战场）＋<strong>右侧详情抽屉</strong>（行点击滑出，承载价值判定四维评分、失败原因、产物路径）。</p>
+
+  <div class="mock-frame" role="img" aria-label="最终界面示意：顶部健康卡片、中部内容表、右侧详情抽屉">
+    <div class="mock-chrome"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-url">127.0.0.1:8787 — Source Sync</span></div>
+    <div class="mock-body" style="display:grid;grid-template-columns:1fr 252px;min-height:400px">
+      <!-- 主列 -->
+      <div style="padding:12px 14px;display:flex;flex-direction:column;gap:10px;min-width:0">
+        <!-- 标题行 -->
+        <div style="display:flex;align-items:center;gap:10px">
+          <strong style="font-size:13px">Source Sync</strong>
+          <span class="muted" style="font-size:10.5px">队列 6 · 处理中 1 · 失败 2</span>
+          <span style="flex:1"></span>
+          <span class="m-btn">全部扫描</span><span class="m-btn m-btn-primary">＋ 添加来源</span>
+        </div>
+        <!-- 健康卡片区（B） -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:7px">
+          <div style="border:1px solid var(--line);border-radius:8px;padding:7px 9px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:4px"><strong style="font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">▶ Lenny's Podcast</strong><span class="m-pill" style="background:var(--ok-soft);color:var(--ok)">正常</span></div>
+            <div style="font-size:9.5px;color:var(--ink-3);margin-top:3px">已同步 4 · 排队 1 · 06:00</div>
+          </div>
+          <div style="border:1px solid var(--line);border-radius:8px;padding:7px 9px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:4px"><strong style="font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">▶ Training Data</strong><span class="m-pill" style="background:var(--ok-soft);color:var(--ok)">正常</span></div>
+            <div style="font-size:9.5px;color:var(--ink-3);margin-top:3px">21/28 · 快照无变化 · 06:02</div>
+          </div>
+          <div style="border:1px solid var(--warn);border-radius:8px;padding:7px 9px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:4px"><strong style="font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">𝕏 Likes</strong><span class="m-pill" style="background:var(--warn-soft);color:var(--warn)">incomplete</span></div>
+            <div style="font-size:9.5px;color:var(--warn);margin-top:3px">第 3 页 429 · 水位未前移 · 08:14</div>
+          </div>
+          <div style="border:1px solid var(--line);border-radius:8px;padding:7px 9px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:4px"><strong style="font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">𝕏 List · AI 产品</strong><span class="m-pill" style="background:var(--review-soft);color:var(--review)">影子</span></div>
+            <div style="font-size:9.5px;color:var(--ink-3);margin-top:3px">collect 9 · review 14 · noise 9</div>
+          </div>
+        </div>
+        <!-- 筛选条（A） -->
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <span class="m-btn">来源：全部 ▾</span><span class="m-btn">平台 ▾</span>
+          <span class="m-btn" style="border-color:var(--accent);color:var(--accent-ink)">状态：未同步 ✕</span>
+          <span class="m-btn">判定 ▾</span><span class="m-btn">语言 ▾</span>
+          <span style="flex:1"></span>
+          <span class="m-btn" style="color:var(--ink-3)">🔍 关键词</span>
+        </div>
+        <!-- 批量操作条 -->
+        <div style="display:flex;gap:8px;align-items:center;background:var(--surface-2);border:1px solid var(--line);border-radius:7px;padding:6px 10px">
+          <span class="small" style="font-size:11px">已选 <strong class="num">3</strong> 条 · 筛选结果共 <strong class="num">7</strong> 条未同步</span>
+          <span style="flex:1"></span>
+          <span class="m-btn">同步所选</span><span class="m-btn m-btn-primary">同步筛选结果中未同步的 7 条</span>
+        </div>
+        <!-- 内容表 -->
+        <div style="border:1px solid var(--line);border-radius:7px;overflow:hidden">
+          <div style="display:grid;grid-template-columns:24px 1fr 96px 76px;gap:0;background:var(--surface-2);padding:5px 10px;font-size:10px;color:var(--ink-2);font-weight:600">
+            <span></span><span>标题</span><span>来源</span><span>状态</span>
+          </div>
+          <div style="display:grid;grid-template-columns:24px 1fr 96px 76px;padding:6px 10px;border-top:1px solid var(--line);align-items:center">
+            <span class="m-check on"></span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">How Anthropic builds product | Mike Krieger</span><span class="muted" style="font-size:10.5px">Lenny's</span><span><span class="m-pill" style="background:var(--surface-2);color:var(--ink-2)">未同步</span></span>
+          </div>
+          <div style="display:grid;grid-template-columns:24px 1fr 96px 76px;padding:6px 10px;border-top:1px solid var(--line);align-items:center;background:var(--accent-soft)">
+            <span class="m-check on"></span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">@swyx · Why every AI eng team needs a harness…</span><span class="muted" style="font-size:10.5px">𝕏 List</span><span><span class="m-pill" style="background:var(--review-soft);color:var(--review)">review</span></span>
+          </div>
+          <div style="display:grid;grid-template-columns:24px 1fr 96px 76px;padding:6px 10px;border-top:1px solid var(--line);align-items:center">
+            <span class="m-check"></span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Agent evals are the new unit tests — thread</span><span class="muted" style="font-size:10.5px">𝕏 Likes</span><span><span class="m-pill" style="background:var(--ok-soft);color:var(--ok)">已同步</span></span>
+          </div>
+          <div style="display:grid;grid-template-columns:24px 1fr 96px 76px;padding:6px 10px;border-top:1px solid var(--line);align-items:center">
+            <span class="m-check on"></span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Claude Code workflow deep-dive…</span><span class="muted" style="font-size:10.5px">𝕏 List</span><span><span class="m-pill" style="background:var(--err-soft);color:var(--err)">失败 ×2</span></span>
+          </div>
+        </div>
+      </div>
+      <!-- 详情抽屉（C） -->
+      <div style="border-left:1px solid var(--line-strong);background:var(--surface);padding:12px 13px;display:flex;flex-direction:column;gap:8px;box-shadow:-4px 0 12px rgba(0,0,0,.04)">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong style="font-size:10px;color:var(--ink-3);letter-spacing:.06em">详情抽屉 · 行点击滑出</strong><span class="m-btn" style="padding:0 7px">✕</span>
+        </div>
+        <div>
+          <strong style="font-size:11.5px">@swyx · 2026-07-14</strong>
+          <div class="muted" style="font-size:10.5px;margin-top:2px">Why every AI eng team needs a harness layer between the model and the product. We learned this…</div>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-size:10.5px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px"><strong>价值判定</strong><span class="m-pill" style="background:var(--review-soft);color:var(--review)">review · 5/10</span></div>
+          <div style="display:grid;grid-template-columns:auto 1fr auto;gap:2px 8px;color:var(--ink-2)">
+            <span>相关性</span><span style="background:var(--surface-2);border-radius:3px;overflow:hidden"><span style="display:block;width:66%;height:6px;background:var(--accent);margin-top:4px"></span></span><span class="num">2/3</span>
+            <span>信息增量</span><span style="background:var(--surface-2);border-radius:3px;overflow:hidden"><span style="display:block;width:33%;height:6px;background:var(--accent);margin-top:4px"></span></span><span class="num">1/3</span>
+            <span>实用性</span><span style="background:var(--surface-2);border-radius:3px;overflow:hidden"><span style="display:block;width:50%;height:6px;background:var(--accent);margin-top:4px"></span></span><span class="num">1/2</span>
+            <span>证据上下文</span><span style="background:var(--surface-2);border-radius:3px;overflow:hidden"><span style="display:block;width:50%;height:6px;background:var(--accent);margin-top:4px"></span></span><span class="num">1/2</span>
+          </div>
+          <div class="muted" style="margin-top:6px">原因码 <code style="font-size:10px">insufficient_context</code> · Thread 后续未取到 · 置信度 0.62</div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <span class="m-btn m-btn-primary" style="flex:1;text-align:center">✓ collect 并同步</span>
+          <span class="m-btn" style="flex:1;text-align:center">✕ noise</span>
+        </div>
+        <div class="muted" style="font-size:10px;border-top:1px solid var(--line);padding-top:6px">
+          来源关系：𝕏 List · AI 产品（present）<br>first_seen 07-15 08:00 · 覆盖将保留原始评分
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="mock-caption">同一个抽屉复用三种内容：X 内容显示判定评分与 collect/noise 操作；失败任务显示错误详情与重试按钮；已同步内容显示三个产物路径。</p>
+
+  <h3>分阶段交付</h3>
+  <div class="tbl-wrap"><table>
+    <tr><th style="width:60px">阶段</th><th>界面交付</th></tr>
+    <tr><td class="num">1</td><td class="small">骨架：标题行 + 简版健康卡（仅 YouTube Channel）+ 筛选条 + 内容表 + 批量操作条 + 添加来源向导（inspect 预览 → 策略确认 → 首次同步范围）。抽屉先只承载「产物路径 / 失败原因」两种内容</td></tr>
+    <tr><td class="num">2</td><td class="small">健康卡增加 Playlist 形态（快照 diff 摘要、removed/unavailable 计数）</td></tr>
+    <tr><td class="num">3</td><td class="small">X Likes 健康卡（页数、水位是否接上、停止原因、回溯进度「已读 n 页 / cursor 待续」）；扫描进度轮询展示</td></tr>
+    <tr><td class="num">4</td><td class="small">抽屉的价值判定形态 + review 批量 collect/noise + 影子模式校验计数（n/50）+ 影子样本导出</td></tr>
+  </table></div>
+
+  <h3>交互基调</h3>
+  <ul class="small">
+    <li>局部刷新（fetch + DOM 更新），不整页跳转；扫描/处理中状态 2 秒轮询 <code>status.json</code></li>
+    <li>状态一律用色 pill 编码：<span class="pill p-plain">未同步</span> <span class="pill p-queued">排队中</span> <span class="pill p-queued">处理中</span> <span class="pill p-ok">已同步</span> <span class="pill p-err">失败</span> <span class="pill p-review">review</span></li>
+    <li>按钮按压 <code>transform: scale(0.97)</code>（140ms ease-out）；动画只用于抽屉进出（200ms，<code>cubic-bezier(0.23,1,0.32,1)</code>）和 toast；高频操作（勾选、j/k 走查、筛选切换）零动画</li>
+    <li>抽屉支持 j/k 上下条、Esc 关闭——阶段 4 影子校准逐条走查靠它</li>
+    <li>破坏性操作（删除监控关系）二次确认，并明示「内容与产物将保留」；批量同步用 §3.2 三段式反馈 toast</li>
+    <li>尊重 <code>prefers-reduced-motion</code>；深浅色跟随系统</li>
+  </ul>
+</section>
+
+<!-- ═══════════ §5 实施切片 ═══════════ -->
+<section id="s5">
+  <div class="section-head">
+    <span class="no">§5</span><h2>实施切片</h2><span class="tier tier-cold">纵向切片 · 每阶段可用</span>
+  </div>
+  <div class="tbl-wrap"><table>
+    <tr><th style="width:52px">阶段</th><th>交付</th><th>验收要点</th></tr>
+    <tr>
+      <td class="num">1</td>
+      <td>SQLite + Dashboard + YouTube Channel：来源管理、Channel scan、内容表、批量入队、幂等 Podcast Processor、单视频端到端</td>
+      <td class="small muted">添加 Lenny's Podcast 见最近 5 个长视频；已有产物显示已同步；批量只处理未同步；成功显示三个产物路径；重复点击不重复生成</td>
+    </tr>
+    <tr>
+      <td class="num">2</td>
+      <td>YouTube Playlist + 首次设置：规范化、完整快照 diff、关系状态、首次同步数量、auto_sync_new</td>
+      <td class="small muted">Training Data 完整基线；模拟新增/移除/重排状态正确；前 N 条只入队 N 条；移除重加不重复处理</td>
+    </tr>
+    <tr>
+      <td class="num">3</td>
+      <td>X Likes 安全分页 + 全量整理：likes-page adapter、cursor、overlap IDs、逐页事务、Tweet Organizer、语言规则、Obsidian 输出（含 Base）</td>
+      <td class="small muted">底层请求 ≤20 条；重合处停止；中途失败水位不前移；分批回溯按 15 页/次接续；新 Likes 全入队；中英文样本走正确路径；整理稿落在 <code>文章收集/tweet 整理/</code> 且 frontmatter 合规</td>
+    </tr>
+    <tr>
+      <td class="num">4</td>
+      <td>X Lists + 价值判定：List adapter、主题与阈值、Value Evaluator、collect/review/noise、人工覆盖、Likes 优先级</td>
+      <td class="small muted">固定样本结构稳定；上下文不足进 review；noise 可见不自动入队；Likes 中的 noise 会入队；可导出影子样本</td>
+    </tr>
+    <tr>
+      <td class="num">5</td>
+      <td>调度与运维：launchd、锁、风控暂停、日志、备份、SQLite 完整性检查、README、implementation-notes</td>
+      <td class="small muted">登录后调度恢复；重启不丢任务不重复处理；X 认证失败不快速重试；装卸不影响扩展系统</td>
+    </tr>
+  </table></div>
+</section>
+
+<!-- ═══════════ §6 机械性工作 ═══════════ -->
+<section id="s6">
+  <div class="section-head">
+    <span class="no">§6</span><h2>机械性工作</h2><span class="tier tier-cold">照做即可</span>
+  </div>
+
+  <h3>6.1 从 <code>flows/podcast-bookmarks.py</code> 抽出共享 Processor</h3>
+  <p class="small">纯搬迁 + 收口，不改行为。现有 flow 里队列无关的函数移入 <code>processors/podcast.py</code>：</p>
+  <ul class="small">
+    <li>URL 与元数据：<code>normalize_youtube_url</code>、<code>extract_youtube_url</code>、<code>fetch_youtube_metadata</code>、<code>normalize_publish_date</code></li>
+    <li>字幕链（ADR 0007 顺序不变）：<code>firecrawl_transcript</code> → <code>yt_dlp_transcript</code>（含 <code>yt_dlp_once</code>、<code>parse_json3</code>/<code>parse_vtt</code>、<code>caption_language</code>）→ 明确失败 <code>youtube-transcript-unavailable</code></li>
+    <li>产出与校验：<code>prepare_workdir</code>、<code>call_pi</code>（podcast-digest）、<code>validate_result</code>、<code>done_meta</code></li>
+    <li><code>flows/podcast-bookmarks.py</code> 改为薄壳：outbox 读取 + 调 <code>PodcastProcessor.process()</code>；现有 <code>test/podcast_flow_test.py</code> 全绿为迁移完成标准</li>
+  </ul>
+  <p class="small muted">约束照旧：<code>source.md</code> 存在才跑 podcast-digest；不开 Chrome、不用 OpenCLI 取 YouTube 字幕、不读 Cookie、不下载音视频。</p>
+
+  <h3>6.2 X 分页 adapter 的安装与风控</h3>
+  <ul class="small">
+    <li><code>likes-page</code> / <code>list-page</code> adapter 源码与测试入库，setup 脚本装为 OpenCLI 私有命令（不改全局 npm 包）</li>
+    <li>共享分页壳：每页 ≤20、严格串行、页间 5–10 秒随机间隔、逐页事务落库、429/登录失效/验证挑战立即停止且同次运行不重试、不用 <code>--top-by-engagement</code>、只读</li>
+    <li>首次接入 Likes 前，先从现有整理产物导入可识别的 <code>tweet_id</code> 建历史基线</li>
+  </ul>
+
+  <h3>6.3 运行时与调度</h3>
+  <ul class="small">
+    <li>目录初始化：<code>~/.info-collector/source-sync/{source-sync.db, logs/, status.json}</code>；沿用现有 flow 的 <code>acquire_lock</code>/<code>update_status</code>/<code>atomic_write_json</code> 模式</li>
+    <li>launchd：三个定时项——YouTube 扫描每天 06:00、X 扫描每 12 小时（08:00/20:00）、Worker 随扫描触发 + 独立兜底间隔；PATH 处理照抄 podcast flow 的既有方案；Dashboard 手动操作调同一模块 Interface</li>
+    <li>并发上限：同一来源同时最多一个扫描；X 全局串行；Podcast Worker 每轮 ≤2 条；Tweet Organizer 串行；<code>syncing</code> 超 30 分钟由下次 Worker 启动恢复为 <code>queued</code></li>
+    <li>SQLite 每日备份 + <code>PRAGMA integrity_check</code> 纳入定时任务；迁移脚本按 <code>meta.schema_version</code> 顺序应用</li>
+  </ul>
+
+  <h3>6.4 测试清单</h3>
+  <ul class="small">
+    <li>单元：URL 规范化、content_key、状态迁移、Playlist diff、overlap 命中、单页 20 条上限、页数预算（15 页停止 + cursor 接续）、判定阈值、Likes 优先级、批量去重、frontmatter 生成</li>
+    <li>集成（临时 SQLite + 假 Adapter/Processor）：添加来源→完成任务全链路、扫描中断不前移水位、Worker 崩溃恢复、重复发现不重复入队、Dashboard 与库一致</li>
+    <li>只读现场验证：Lenny's Podcast / Training Data / <code>Tenitsugunsmith</code> Likes / List <code>2058340249626128801</code>，全部只读、串行、每页 20、异常即停</li>
+  </ul>
+
+  <h3>6.5 文档与领域语言</h3>
+  <ul class="small">
+    <li>最终术语（Monitored Source、Content Item、Source Relationship、Discovery State、Sync Job、Collection Policy、Value Decision、Organized Tweet）补入根目录 <code>CONTEXT.md</code>，代码不造同义词</li>
+    <li>README 增补安装/卸载；全程维护 implementation-notes（偏差记录进 Deviations）</li>
+    <li>两份临时方案文档（<code>x-likes-opencli-临时方案.md</code>、<code>youtube-博主更新监控-临时方案.md</code>）在阶段 3 / 阶段 1 落地后标注为已被本计划取代</li>
+  </ul>
+</section>
+
+<!-- ═══════════ §7 交接说明 ═══════════ -->
+<section id="s7">
+  <div class="section-head">
+    <span class="no">§7</span><h2>交接说明（写给实施 agent）</h2><span class="tier tier-cold">开工前必读</span>
+  </div>
+  <ul>
+    <li><strong>本文即最终规格</strong>，所有决策已由用户确认，不需要再向用户征求本文已覆盖的决定。与 <code>docs/自动订阅源同步-实施计划.md</code>（设计基线）冲突时以本文为准。</li>
+    <li>按 §5 的阶段顺序纵向推进，<strong>每个阶段结束时系统可实际使用</strong>；不要横向先建完所有表再写所有 adapter。</li>
+    <li>阶段 1 开工时：先建 §1 的 SQLite schema（含 meta 表和迁移机制），再做 §6.1 的 Processor 抽取（以 <code>test/podcast_flow_test.py</code> 全绿为准），然后搭 §4 的界面骨架。</li>
+    <li>红线（任何阶段不得违反）：不写扩展 outbox；不复制第二套字幕/文章生成代码；YouTube 字幕只走 Firecrawl → yt-dlp → 明确失败；不开 Chrome / 不读 Cookie / 不下载音视频；X 只读、每页 ≤20、严格串行、风控即停不快速重试。</li>
+    <li>遇到计划未覆盖的边界情况：选保守处理，记入 implementation-notes 的 Deviations，不要停下来等确认。</li>
+    <li>需要用户参与的时点只有两个：阶段 4 影子模式的 50–100 条人工校验；各 X List 接入时填写 topics。</li>
+  </ul>
+</section>
+
+<footer style="margin-top:64px;border-top:1px solid var(--line);padding-top:16px" class="small muted">
+  <p>最终版 · 2026-07-16 确认。确认记录：扫描频率（YouTube 每日 / X 每 12 小时）、X 页间隔 5–10 秒、Likes 回溯 15 页/次、Obsidian 目录「文章收集/tweet 整理」+ 独立 Base、阈值 7、名称 Source Sync、界面混合方案、数据模型按 §1 优化稿执行。</p>
+</footer>
+
+</div>

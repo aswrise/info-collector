@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Source Sync · 订阅源同步</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div><h1>Source Sync</h1><p id="summary">正在读取本地状态…</p></div>
+      <div class="actions"><button id="scan-all">全部扫描</button><button class="primary" id="add">＋ 添加来源</button></div>
+    </header>
+    <section id="health" class="health" aria-label="来源健康状态"></section>
+    <section class="toolbar" aria-label="筛选">
+      <select id="source-filter"><option value="">来源：全部</option></select>
+      <select id="status-filter"><option value="">状态：全部</option><option value="not_synced">未同步</option><option value="queued">排队中</option><option value="syncing">处理中</option><option value="synced">已同步</option><option value="failed">失败</option></select>
+      <select id="decision-filter"><option value="">判定：全部</option><option value="collect">collect</option><option value="review">review</option><option value="noise">noise</option></select>
+      <select id="language-filter"><option value="">语言：全部</option><option value="zh">中文</option><option value="en">英文</option><option value="mixed">混合</option></select>
+      <input id="search" type="search" placeholder="关键词">
+    </section>
+    <section class="batch" id="batch" hidden><span>已选 <strong id="selected-count">0</strong> 条</span><button id="mark-noise">标为 noise</button><button id="mark-collect">collect 并同步</button><button id="sync-selected" class="primary">同步所选</button></section>
+    <section class="table-wrap">
+      <table><thead><tr><th><input id="select-all" type="checkbox" aria-label="全选"></th><th>标题</th><th>来源</th><th>状态</th></tr></thead><tbody id="items"></tbody></table>
+      <p id="empty" class="empty">还没有内容。先添加一个 YouTube Channel。</p>
+    </section>
+  </main>
+
+  <aside id="drawer" aria-hidden="true"><button class="close" aria-label="关闭">×</button><div id="detail"></div></aside>
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <dialog id="add-dialog">
+    <form method="dialog" id="add-form">
+      <h2>添加来源</h2>
+      <label>Channel / Playlist URL<input name="url" type="url" required placeholder="https://www.youtube.com/@channel"></label>
+      <label id="initial-row">首次同步<select name="initial_sync_count"><option value="0">只建立监控</option><option value="5" selected>同步最新 5 条</option><option value="10">同步最新 10 条</option><option value="-1">同步全部</option></select></label>
+      <label class="check"><input name="auto_sync_new" type="checkbox">以后发现新内容时自动同步</label>
+      <label>List topics（仅 X List，逗号分隔）<input name="topics" placeholder="AI 产品, Agent 工作流"></label>
+      <p id="preview"></p>
+      <footer><button value="cancel">取消</button><button id="confirm-add" class="primary" value="default">检查并添加</button></footer>
+    </form>
+  </dialog>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

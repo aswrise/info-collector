@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tweet Organizer"
+  short_description: "Organize structured X posts into Chinese Obsidian notes"
+  default_prompt: "Organize the provided structured Tweet record and write the required result JSON."

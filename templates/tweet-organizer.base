@@ -1,0 +1,68 @@
+filters:
+  and:
+    - file.inFolder("文章收集/tweet 整理")
+    - file.ext == "md"
+properties:
+  title:
+    displayName: 标题
+  authors:
+    displayName: 作者
+  published:
+    displayName: 发布日期
+  language:
+    displayName: 语言
+  translation_status:
+    displayName: 翻译状态
+  origin:
+    displayName: 来源类型
+  lists:
+    displayName: Lists
+  tags:
+    displayName: 标签
+views:
+  - type: table
+    name: 全部
+    order:
+      - title
+      - authors
+      - published
+      - language
+      - translation_status
+      - origin
+      - tags
+    sort:
+      - property: date
+        direction: DESC
+  - type: table
+    name: 已翻译
+    filters:
+      and:
+        - translation_status != "not_needed"
+    order:
+      - title
+      - authors
+      - published
+      - language
+      - translation_status
+      - origin
+      - tags
+    sort:
+      - property: date
+        direction: DESC
+  - type: table
+    name: 来自 List
+    filters:
+      and:
+        - origin == "list"
+    order:
+      - title
+      - authors
+      - published
+      - language
+      - translation_status
+      - origin
+      - lists
+      - tags
+    sort:
+      - property: date
+        direction: DESC

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tweet Value Evaluator"
+  short_description: "Score X List posts against configured topics"
+  default_prompt: "Score the provided structured Tweet batch and write the required result JSON."
