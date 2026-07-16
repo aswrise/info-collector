@@ -183,6 +183,16 @@ class SourceSyncService:
                             "tweet_organizer", "auto", source.display_name,
                         )
 
+                if (
+                    source.source_type == "x_likes"
+                    and checkpoint["last_complete_at"] is None
+                    and pending is None
+                ):
+                    self.registry.finish_x_scan(
+                        source.id, complete=True, pages=pages, overlap_ids=top_ids
+                    )
+                    return DiscoveryResult(discovered, new_items)
+
                 hit_overlap = bool(overlap.intersection(ids))
                 if hit_overlap and not (resuming and cursor is None):
                     self.registry.finish_x_scan(

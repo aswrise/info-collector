@@ -334,24 +334,21 @@ class SourceSyncTest(unittest.TestCase):
             "-f", "json", "--cursor", "before",
         ])
 
-    def test_x_backfill_stops_at_budget_then_resumes_after_top_check(self):
-        source = self.add_likes(pages=2)
+    def test_likes_initial_scan_stops_after_latest_twenty(self):
+        source = self.add_likes(pages=15)
 
         class Adapter:
             def __init__(self):
                 self.run = 0
+                self.cursors = []
             def scan(self, _source, cursor):
+                self.cursors.append(cursor)
                 if self.run == 0:
-                    pages = {
-                        None: ScanPage([x_item("30")], "c1", False),
-                        "c1": ScanPage([x_item("20")], "c2", False),
-                    }
-                else:
-                    pages = {
-                        None: ScanPage([x_item("31"), x_item("30", 1)], "new-c1", False),
-                        "c2": ScanPage([x_item("10")], None, True),
-                    }
-                return pages[cursor]
+                    return ScanPage(
+                        [x_item(str(tweet_id), position) for position, tweet_id in enumerate(range(120, 100, -1))],
+                        "older", False,
+                    )
+                return ScanPage([x_item("121"), x_item("120", 1)], "older-again", False)
 
         adapter = Adapter()
         service = SourceSyncService(
@@ -360,19 +357,24 @@ class SourceSyncTest(unittest.TestCase):
         )
         service.scan(source.id)
         checkpoint = self.registry.get_checkpoint(source.id)
-        self.assertEqual(checkpoint["pending_cursor"], "c2")
-        self.assertEqual(checkpoint["pending_stop_reason"], "page_budget")
-        self.assertEqual(checkpoint["overlap_ids"], [])
+        self.assertIsNone(checkpoint["pending_cursor"])
+        self.assertIsNone(checkpoint["pending_stop_reason"])
+        self.assertEqual(checkpoint["overlap_ids"], ["120", "119", "118", "117", "116"])
+        self.assertEqual(adapter.cursors, [None])
+        self.assertEqual(self.registry.db.execute(
+            "SELECT COUNT(*) FROM sync_jobs WHERE processor='tweet_organizer'"
+        ).fetchone()[0], 20)
 
         adapter.run = 1
         service.scan(source.id)
         checkpoint = self.registry.get_checkpoint(source.id)
         self.assertIsNone(checkpoint["pending_cursor"])
-        self.assertEqual(checkpoint["overlap_ids"], ["31", "30"])
+        self.assertEqual(checkpoint["overlap_ids"], ["121", "120"])
+        self.assertEqual(adapter.cursors, [None, None])
         queued = self.registry.db.execute(
             "SELECT COUNT(*) FROM sync_jobs WHERE processor='tweet_organizer'"
         ).fetchone()[0]
-        self.assertEqual(queued, 4)
+        self.assertEqual(queued, 21)
         self.assertEqual({row[0] for row in self.registry.db.execute(
             "SELECT collection_subdir FROM sync_jobs WHERE processor='tweet_organizer'"
         )}, {"likes"})

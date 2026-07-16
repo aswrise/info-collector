@@ -30,6 +30,7 @@ Status: implemented, migrated, and deployed.
 - Live migration moved all 9 `result.json`-referenced podcast Markdown products into `播客收集/公共/`, updated all 9 stored paths, kept `播客收集.base` at the root, and returned 0 on an idempotency rerun.
 - The installed Source Sync database is at schema version 2 with `sync_jobs.collection_subdir`; the updated Dashboard responds at `127.0.0.1:8787`, and the manual podcast LaunchAgent runs with the selected Homebrew Python.
 - X Likes baseline recovery scans all descendant collection folders, so re-onboarding after database/work-state loss recognizes notes already stored under `likes/` or any List folder instead of creating duplicates.
+- A newly added X Likes source completes its initial scan after the first 20-item page and records that page as its overlap watermark; later scheduled scans collect only newer Likes.
 - Read-only live `yt-dlp` inspection passed through the committed adapters for Lenny's Podcast (five current `/videos` entries) and the complete Training Data baseline (91 items).
 - `opencli doctor -v` passed with the daemon, extension, and connectivity green. Read-only X checks confirmed safe-stop behavior: `Tenitsugunsmith` is currently protected and List `2058340249626128801` currently resolves to X's “page does not exist” state, so both page adapters return typed command errors instead of treating inaccessible data as an exhausted empty source.
 
