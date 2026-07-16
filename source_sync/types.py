@@ -63,6 +63,7 @@ class EnqueueResult:
     queued: int = 0
     skipped_synced: int = 0
     skipped_active: int = 0
+    skipped_disabled: int = 0
 
 
 @dataclass(frozen=True)

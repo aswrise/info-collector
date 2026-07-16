@@ -15,12 +15,12 @@
     <section id="health" class="health" aria-label="来源健康状态"></section>
     <section class="toolbar" aria-label="筛选">
       <select id="source-filter"><option value="">来源：全部</option></select>
-      <select id="status-filter"><option value="">状态：全部</option><option value="not_synced">未同步</option><option value="queued">排队中</option><option value="syncing">处理中</option><option value="synced">已同步</option><option value="failed">失败</option></select>
+      <select id="status-filter"><option value="">状态：全部</option><option value="not_synced">未同步</option><option value="disabled">已禁用</option><option value="queued">排队中</option><option value="syncing">处理中</option><option value="synced">已同步</option><option value="failed">失败</option></select>
       <select id="decision-filter"><option value="">判定：全部</option><option value="collect">collect</option><option value="review">review</option><option value="noise">noise</option></select>
       <select id="language-filter"><option value="">语言：全部</option><option value="zh">中文</option><option value="en">英文</option><option value="mixed">混合</option></select>
       <input id="search" type="search" placeholder="关键词">
     </section>
-    <section class="batch" id="batch" hidden><span>已选 <strong id="selected-count">0</strong> 条</span><button id="mark-noise">标为 noise</button><button id="mark-collect">collect 并同步</button><button id="sync-selected" class="primary">同步所选</button></section>
+    <section class="batch" id="batch" hidden><span>已选 <strong id="selected-count">0</strong> 条</span><button id="cancel-selected">取消同步</button><button id="disable-selected">禁用</button><button id="mark-noise">标为 noise</button><button id="mark-collect">collect 并同步</button><button id="sync-selected" class="primary">同步所选</button></section>
     <section class="table-wrap">
       <table><thead><tr><th><input id="select-all" type="checkbox" aria-label="全选"></th><th>标题</th><th>来源</th><th>状态</th></tr></thead><tbody id="items"></tbody></table>
       <p id="empty" class="empty">还没有内容。先添加一个 YouTube Channel。</p>

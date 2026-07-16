@@ -14,7 +14,7 @@ Status: implemented, migrated, and deployed.
 
 ## Implemented
 
-- Phase 1: schema v2 migrations, Source Registry, YouTube Channel inspection/scan, idempotent queueing, shared `PodcastProcessor`, Worker, and local no-framework Dashboard/API.
+- Phase 1: schema v3 migrations, Source Registry, YouTube Channel inspection/scan, idempotent queueing, shared `PodcastProcessor`, Worker, and local no-framework Dashboard/API.
 - Phase 2: YouTube Playlist normalization, complete snapshot diff, present/removed/unavailable relationships, position updates, initial sync none/N/all, and `auto_sync_new`.
 - Phase 3: private OpenCLI `likes-page` / `list-page` sources, strict 20-item pages, 5–10 second serial paging, 15-page budget and cursor continuation, overlap watermarks, risk stop, all-Likes enqueueing, Tweet Organizer, compliant Obsidian Markdown, and `tweet 整理.base`.
 - Phase 4: X List topics and threshold 7, four score dimensions, collect/review/noise, `insufficient_context` review guard, shadow mode, sample export, human overrides, and Likes priority.
@@ -22,13 +22,13 @@ Status: implemented, migrated, and deployed.
 
 ## Verification
 
-- `test/source_sync_test.py` covers schema, normalization, Channel command safety, Playlist diff/reorder/unavailable, queue idempotency, first-source folder ownership across retries, selected-source Dashboard enqueueing, source-folder propagation through the Worker, stale-safe Worker behavior, request-local Dashboard/SQLite consistency, X page limit/cursor/budget/resume/risk stop, Tweet Markdown/Base output, value thresholds, shadow mode, override preservation, and Likes priority.
+- `test/source_sync_test.py` covers schema, normalization, Channel command safety, Playlist diff/reorder/unavailable, queue idempotency, queued-only cancellation, persistent disable/re-enable behavior, first-source folder ownership across retries, selected-source Dashboard enqueueing, source-folder propagation through the Worker, stale-safe Worker behavior, request-local Dashboard/SQLite consistency, X page limit/cursor/budget/resume/risk stop, Tweet Markdown/Base output, value thresholds, shadow mode, override preservation, and Likes priority.
 - `test/x_page_adapter.test.js` covers the committed OpenCLI page parser, structured media, cursor, and the 20-item ceiling.
 - Existing `test/podcast_flow_test.py` remains the compatibility gate for the Processor extraction and now proves Public Collection routing, conservative product migration, and recognition of parameterized legacy YouTube workdirs from canonical `watch?v=` URLs.
 - Plists are checked with `plutil -lint`; Base and skill YAML are parsed locally.
-- The complete local suite passes: 33 Node tests and 42 Python tests. The manual podcast installer has a regression test for selecting Python 3.10+ and re-enabling its LaunchAgent.
+- The complete local suite passes: 34 Node tests and 45 Python tests. The manual podcast installer has a regression test for selecting Python 3.10+ and re-enabling its LaunchAgent.
 - Live migration moved all 9 `result.json`-referenced podcast Markdown products into `播客收集/公共/`, updated all 9 stored paths, kept `播客收集.base` at the root, and returned 0 on an idempotency rerun.
-- The installed Source Sync database is at schema version 2 with `sync_jobs.collection_subdir`; the updated Dashboard responds at `127.0.0.1:8787`, and the manual podcast LaunchAgent runs with the selected Homebrew Python.
+- The installed Source Sync database is at schema version 3 with `sync_jobs.collection_subdir` and `content_items.sync_disabled`; the updated Dashboard responds at `127.0.0.1:8787`, and the manual podcast LaunchAgent runs with the selected Homebrew Python.
 - X Likes baseline recovery scans all descendant collection folders, so re-onboarding after database/work-state loss recognizes notes already stored under `likes/` or any List folder instead of creating duplicates.
 - A newly added X Likes source completes its initial scan after the first 20-item page and records that page as its overlap watermark; later scheduled scans collect only newer Likes.
 - Read-only live `yt-dlp` inspection passed through the committed adapters for Lenny's Podcast (five current `/videos` entries) and the complete Training Data baseline (91 items).

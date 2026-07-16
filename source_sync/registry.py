@@ -273,6 +273,17 @@ class SourceRegistry:
         result = EnqueueResult()
         with self.db:
             for key in dict.fromkeys(content_keys):
+                item = self.db.execute(
+                    "SELECT sync_disabled FROM content_items WHERE content_key=?", (key,)
+                ).fetchone()
+                if not item:
+                    raise KeyError(key)
+                if item["sync_disabled"]:
+                    result = EnqueueResult(
+                        result.queued, result.skipped_synced, result.skipped_active,
+                        result.skipped_disabled + 1,
+                    )
+                    continue
                 owner = self.db.execute(
                     """SELECT collection_subdir FROM sync_jobs
                        WHERE content_key=? AND processor=? AND collection_subdir IS NOT NULL
@@ -287,7 +298,10 @@ class SourceRegistry:
                     (key, processor, trigger, folder, utc_now()),
                 )
                 if cursor.rowcount:
-                    result = EnqueueResult(result.queued + 1, result.skipped_synced, result.skipped_active)
+                    result = EnqueueResult(
+                        result.queued + 1, result.skipped_synced,
+                        result.skipped_active, result.skipped_disabled,
+                    )
                     continue
                 status = self.db.execute(
                     """SELECT status FROM sync_jobs WHERE content_key=? AND processor=?
@@ -300,6 +314,7 @@ class SourceRegistry:
                     result.queued,
                     result.skipped_synced + (status[0] == "synced"),
                     result.skipped_active + (status[0] != "synced"),
+                    result.skipped_disabled,
                 )
         return result
 
@@ -312,6 +327,30 @@ class SourceRegistry:
                    ON CONFLICT DO NOTHING""",
                 (content_key, processor, json.dumps(result, ensure_ascii=False), utc_now(), utc_now()),
             )
+
+    def cancel_jobs(self, job_ids: Iterable[int]) -> int:
+        ids = list(dict.fromkeys(job_ids))
+        with self.db:
+            for job_id in ids:
+                if self.db.execute(
+                    "DELETE FROM sync_jobs WHERE id=? AND status='queued'", (job_id,)
+                ).rowcount:
+                    continue
+                if self.db.execute("SELECT 1 FROM sync_jobs WHERE id=?", (job_id,)).fetchone():
+                    raise ValueError("only queued jobs can be cancelled")
+                raise KeyError(job_id)
+        return len(ids)
+
+    def set_disabled(self, content_keys: Iterable[str], disabled: bool) -> int:
+        keys = list(dict.fromkeys(content_keys))
+        with self.db:
+            for key in keys:
+                if not self.db.execute(
+                    "UPDATE content_items SET sync_disabled=? WHERE content_key=?",
+                    (int(disabled), key),
+                ).rowcount:
+                    raise KeyError(key)
+        return len(keys)
 
     def recover_stale_jobs(self, minutes: int = 30) -> int:
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat(

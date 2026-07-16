@@ -65,6 +65,7 @@ bash scripts/setup-source-sync.sh --uninstall
 `播客收集/<频道或列表名>/`，手动收藏写入 `播客收集/公共/`；X Likes 写入
 `文章收集/tweet 整理/likes/`，X List 写入 `文章收集/tweet 整理/<List 名>/`。
 后续在其他来源发现同一内容时不会复制或移动文件；两个 `.base` 文件仍留在各自集合根目录。
+Dashboard 可逐条或批量取消 queued 任务；禁用内容后，后续扫描不会再将它自动入队。
 
 ## 工作原理
 

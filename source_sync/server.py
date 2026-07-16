@@ -94,12 +94,30 @@ class SourceSyncHandler(SimpleHTTPRequestHandler):
                     processor = "tweet_organizer" if platform == "x" else "podcast"
                     folder = self.registry.collection_name(key, source_id)
                     groups.setdefault((processor, folder), []).append(key)
-                totals = {"queued": 0, "skipped_synced": 0, "skipped_active": 0}
+                totals = {
+                    "queued": 0, "skipped_synced": 0,
+                    "skipped_active": 0, "skipped_disabled": 0,
+                }
                 for (processor, folder), keys in groups.items():
                     result = asdict(self.registry.enqueue(keys, processor, collection_subdir=folder))
                     for name in totals:
                         totals[name] += result[name]
                 return self._json(totals)
+            if self.path == "/api/jobs/cancel":
+                job_ids = body.get("job_ids")
+                if not isinstance(job_ids, list) or not job_ids or not all(
+                    isinstance(job_id, int) and job_id > 0 for job_id in job_ids
+                ):
+                    raise ValueError("job_ids must be a non-empty list of positive integers")
+                return self._json({"cancelled": self.registry.cancel_jobs(job_ids)})
+            if self.path == "/api/items/disabled":
+                keys = body.get("content_keys")
+                disabled = body.get("disabled")
+                if not isinstance(keys, list) or not keys or not all(
+                    isinstance(key, str) and key for key in keys
+                ) or not isinstance(disabled, bool):
+                    raise ValueError("content_keys and boolean disabled are required")
+                return self._json({"updated": self.registry.set_disabled(keys, disabled)})
             if self.path == "/api/worker":
                 return self._json({"completed": Worker(self.registry).run(2)})
             if self.path == "/api/decisions":
@@ -138,7 +156,9 @@ class SourceSyncHandler(SimpleHTTPRequestHandler):
             self.registry.delete_source(source_id)
             return self._json({"ok": True})
         except KeyError:
-            return self._json({"error": "source not found"}, 404)
+            return self._json({"error": "not found"}, 404)
+        except ValueError as error:
+            return self._json({"error": str(error)}, 409)
 
     @contextmanager
     def _request_context(self):

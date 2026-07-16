@@ -8,10 +8,10 @@ async function api(path, options = {}) {
   return data;
 }
 
-const status = item => item.sync_status || item.effective_decision || "not_synced";
+const status = item => item.sync_status || (item.sync_disabled ? "disabled" : item.effective_decision) || "not_synced";
 const selectionId = item => `${item.source_id}\t${item.content_key}`;
 const selectedItems = () => [...selected].map(id => state.items.find(item => selectionId(item) === id)).filter(Boolean);
-const labels = {not_synced:"未同步", queued:"排队中", syncing:"处理中", synced:"已同步", failed:"失败"};
+const labels = {not_synced:"未同步", disabled:"已禁用", queued:"排队中", syncing:"处理中", synced:"已同步", failed:"失败"};
 const label = value => labels[value] || value;
 function escapeHTML(value = "") {
   const span = document.createElement("span");
@@ -61,7 +61,7 @@ function renderItems() {
     <td><input type="checkbox" data-select ${selected.has(selectionId(item)) ? "checked" : ""}></td>
     <td>${escapeHTML(item.title_or_text || item.content_key)}</td>
     <td>${escapeHTML(sources.get(item.source_id) || "")}</td>
-    <td><span class="pill ${status(item)}">${label(status(item))}</span></td>
+    <td><span class="pill ${status(item)}">${label(status(item))}</span>${item.sync_status === "queued" ? ` <button data-cancel-job="${item.job_id}">取消同步</button>` : ""} <button data-disable-key="${escapeHTML(item.content_key)}" data-disabled="${item.sync_disabled ? 1 : 0}">${item.sync_disabled ? "启用" : "禁用"}</button></td>
   </tr>`).join("");
   $("#empty").hidden = items.length > 0;
   $("#batch").hidden = selected.size === 0;
@@ -103,7 +103,40 @@ async function override(keys, sourceId, value) {
   });
 }
 
+async function cancelJobs(jobIds) {
+  const ids = [...new Set(jobIds.filter(Boolean))];
+  if (!ids.length) return toast("所选内容没有排队任务");
+  await act(async () => {
+    const result = await api("/api/jobs/cancel", {method:"POST", body:JSON.stringify({job_ids:ids})});
+    toast(`已取消 ${result.cancelled} 条同步`);
+  });
+}
+
+async function setDisabled(contentKeys, disabled) {
+  const keys = [...new Set(contentKeys.filter(Boolean))];
+  if (!keys.length) return;
+  await act(async () => {
+    const result = await api("/api/items/disabled", {method:"POST", body:JSON.stringify({content_keys:keys, disabled})});
+    toast(disabled ? `已禁用 ${result.updated} 条；当前队列保持不变` : `已启用 ${result.updated} 条`);
+  });
+}
+
 document.addEventListener("click", event => {
+  const cancel = event.target.closest("[data-cancel-job]");
+  if (cancel) {
+    event.stopPropagation();
+    if (confirm("取消这条排队任务？内容和来源不会删除。")) cancelJobs([Number(cancel.dataset.cancelJob)]);
+    return;
+  }
+  const disable = event.target.closest("[data-disable-key]");
+  if (disable) {
+    event.stopPropagation();
+    const disabled = disable.dataset.disabled !== "1";
+    if (!disabled || confirm("禁用后，未来扫描不会再自动同步这条内容。")) {
+      setDisabled([disable.dataset.disableKey], disabled);
+    }
+    return;
+  }
   const scan = event.target.closest("[data-scan]");
   if (scan) act(async () => { await api(`/api/sources/${scan.dataset.scan}/scan`, {method:"POST", body:"{}"}); toast("扫描完成"); });
   const remove = event.target.closest("[data-delete]");
@@ -164,7 +197,9 @@ $("#add-form").elements.url.addEventListener("input", event => {
 $("#scan-all").onclick = () => act(async () => { for (const source of state.sources) await api(`/api/sources/${source.id}/scan`, {method:"POST", body:"{}"}); toast("全部扫描完成"); });
 $("#items").onchange = event => { if (event.target.hasAttribute("data-select")) { const row = event.target.closest("tr"); const id = `${row.dataset.source}\t${row.dataset.key}`; event.target.checked ? selected.add(id) : selected.delete(id); renderItems(); } };
 $("#select-all").onchange = event => { for (const item of visibleItems()) event.target.checked ? selected.add(selectionId(item)) : selected.delete(selectionId(item)); renderItems(); };
-$("#sync-selected").onclick = () => act(async () => { const items = selectedItems().map(item => ({content_key:item.content_key, source_id:item.source_id})); const result = await api("/api/enqueue", {method:"POST", body:JSON.stringify({items})}); selected.clear(); toast(`已加入 ${result.queued} 条 · 跳过已同步 ${result.skipped_synced} 条 · 跳过排队中/处理中 ${result.skipped_active} 条`); });
+$("#sync-selected").onclick = () => act(async () => { const items = selectedItems().map(item => ({content_key:item.content_key, source_id:item.source_id})); const result = await api("/api/enqueue", {method:"POST", body:JSON.stringify({items})}); selected.clear(); toast(`已加入 ${result.queued} 条 · 跳过已同步 ${result.skipped_synced} 条 · 跳过排队中/处理中 ${result.skipped_active} 条 · 跳过已禁用 ${result.skipped_disabled}`); });
+$("#cancel-selected").onclick = () => cancelJobs(selectedItems().map(item => item.sync_status === "queued" ? item.job_id : null));
+$("#disable-selected").onclick = () => setDisabled(selectedItems().map(item => item.content_key), true);
 $("#mark-collect").onclick = () => { const item = selectedItems().find(row => row.decision); if (item) override(selectedItems().filter(row => row.source_id === item.source_id && row.decision).map(row => row.content_key), item.source_id, "user_collect"); };
 $("#mark-noise").onclick = () => { const item = selectedItems().find(row => row.decision); if (item) override(selectedItems().filter(row => row.source_id === item.source_id && row.decision).map(row => row.content_key), item.source_id, "user_noise"); };
 for (const id of ["#source-filter", "#status-filter", "#decision-filter", "#language-filter", "#search"]) $(id).addEventListener("input", renderItems);

@@ -14,6 +14,8 @@ class Element extends EventTarget {
   set onsubmit(handler) { this.addEventListener('submit', handler); }
   set onclick(handler) { this.addEventListener('click', handler); }
   set onchange(handler) { this.addEventListener('change', handler); }
+  set textContent(value) { this._textContent = String(value); this.innerHTML = String(value); }
+  get textContent() { return this._textContent; }
   setAttribute() {}
   showModal() {}
   close() {}
@@ -45,7 +47,10 @@ test('source form keeps its element across async inspection', async () => {
       addEventListener() {},
     },
     fetch: async path => response(path === '/api/state'
-      ? {sources: [], items: [], counts: {}}
+      ? {sources: [], items: [{
+          content_key: 'youtube:queued', source_id: 1, job_id: 7,
+          sync_status: 'queued', title_or_text: 'Queued video',
+        }], counts: {queued: 1}}
       : {display_name: 'Training Data', source_type: 'youtube_playlist', recent_items: []}),
     FormData,
     Event,
@@ -57,6 +62,9 @@ test('source form keeps its element across async inspection', async () => {
   };
   vm.runInNewContext(fs.readFileSync('source_sync/static/app.js', 'utf8'), context);
   await new Promise(resolve => setImmediate(resolve));
+
+  assert.match(get('#items').innerHTML, /data-cancel-job="7">取消同步/);
+  assert.match(get('#items').innerHTML, /data-disable-key="youtube:queued"[^>]*>禁用/);
 
   form.dispatchEvent(new Event('submit', {cancelable: true}));
   await new Promise(resolve => setImmediate(resolve));

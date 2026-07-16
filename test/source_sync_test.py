@@ -87,7 +87,7 @@ class SourceSyncTest(unittest.TestCase):
             self.registry.db.execute(
                 "SELECT value FROM meta WHERE key='schema_version'"
             ).fetchone()[0],
-            "2",
+            "3",
         )
 
     def test_dashboard_state_uses_request_local_sqlite_connection(self):
@@ -219,6 +219,92 @@ class SourceSyncTest(unittest.TestCase):
         self.registry.finish_job(job.id, {"tldrFile": "/tmp/tldr.md"})
         third = self.registry.enqueue(["youtube:a"], "podcast")
         self.assertEqual(third.skipped_synced, 1)
+
+    def test_cancel_jobs_deletes_only_queued_requests(self):
+        source = self.add_channel()
+        self.registry.record_scan(source.id, ScanPage([item("cancel")]))
+        self.registry.enqueue(["youtube:cancel"], "podcast")
+        job_id = self.registry.db.execute(
+            "SELECT id FROM sync_jobs WHERE content_key='youtube:cancel'"
+        ).fetchone()[0]
+
+        self.registry.cancel_jobs([job_id])
+
+        self.assertIsNone(self.registry.db.execute(
+            "SELECT 1 FROM sync_jobs WHERE id=?", (job_id,)
+        ).fetchone())
+        self.assertIsNotNone(self.registry.db.execute(
+            "SELECT 1 FROM content_items WHERE content_key='youtube:cancel'"
+        ).fetchone())
+        self.assertIsNotNone(self.registry.db.execute(
+            "SELECT 1 FROM source_relationships WHERE content_key='youtube:cancel'"
+        ).fetchone())
+
+        self.registry.enqueue(["youtube:cancel"], "podcast")
+        syncing = self.registry.claim_jobs(1)[0]
+        with self.assertRaisesRegex(ValueError, "queued"):
+            self.registry.cancel_jobs([syncing.id])
+
+    def test_dashboard_can_batch_cancel_queued_jobs(self):
+        source = self.add_channel()
+        self.registry.record_scan(source.id, ScanPage([item("dashboard-cancel")]))
+        self.registry.enqueue(["youtube:dashboard-cancel"], "podcast")
+        job_id = self.registry.db.execute(
+            "SELECT id FROM sync_jobs WHERE content_key='youtube:dashboard-cancel'"
+        ).fetchone()[0]
+        SourceSyncHandler.db_path = self.registry.path
+        server = ThreadingHTTPServer(("127.0.0.1", 0), SourceSyncHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{server.server_port}/api/jobs/cancel",
+                data=json.dumps({"job_ids": [job_id]}).encode(),
+                headers={"Content-Type": "application/json"}, method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                result = json.load(response)
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{server.server_port}/api/items/disabled",
+                data=json.dumps({
+                    "content_keys": ["youtube:dashboard-cancel"], "disabled": True,
+                }).encode(),
+                headers={"Content-Type": "application/json"}, method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                disabled = json.load(response)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(result, {"cancelled": 1})
+        self.assertIsNone(self.registry.db.execute(
+            "SELECT 1 FROM sync_jobs WHERE id=?", (job_id,)
+        ).fetchone())
+
+        self.assertEqual(disabled, {"updated": 1})
+        self.assertEqual(self.registry.db.execute(
+            "SELECT sync_disabled FROM content_items WHERE content_key='youtube:dashboard-cancel'"
+        ).fetchone()[0], 1)
+
+    def test_disabled_items_cannot_be_requeued(self):
+        source = self.add_channel()
+        self.registry.record_scan(source.id, ScanPage([item("disabled")]))
+
+        self.registry.set_disabled(["youtube:disabled"], True)
+        result = self.registry.enqueue(["youtube:disabled"], "podcast")
+
+        self.assertEqual(result.skipped_disabled, 1)
+        self.assertIsNone(self.registry.db.execute(
+            "SELECT 1 FROM sync_jobs WHERE content_key='youtube:disabled'"
+        ).fetchone())
+        self.assertEqual(self.registry.list_items()[0]["sync_disabled"], 1)
+
+        self.registry.set_disabled(["youtube:disabled"], False)
+        self.assertEqual(
+            self.registry.enqueue(["youtube:disabled"], "podcast").queued, 1
+        )
 
     def test_first_enqueued_collection_owns_the_single_job(self):
         source = self.add_channel()
