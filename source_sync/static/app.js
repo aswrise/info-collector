@@ -121,15 +121,16 @@ $("#add").onclick = () => $("#add-dialog").showModal();
 $("#add-form").onsubmit = event => {
   if (event.submitter?.value === "cancel") return;
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
   act(async () => {
     const url = String(form.get("url") || "").trim();
-    if (event.currentTarget.dataset.confirmedUrl !== url) {
+    if (formElement.dataset.confirmedUrl !== url) {
       const preview = await api("/api/inspect", {method:"POST", body:JSON.stringify({url})});
-      event.currentTarget.dataset.confirmedUrl = url;
+      formElement.dataset.confirmedUrl = url;
       $("#preview").textContent = `${preview.display_name} · ${preview.source_type} · ${preview.recent_items.length} 条预览`;
-      const select = event.currentTarget.elements.initial_sync_count;
-      event.currentTarget.elements.topics.required = preview.source_type === "x_list";
+      const select = formElement.elements.initial_sync_count;
+      formElement.elements.topics.required = preview.source_type === "x_list";
       $("#initial-row").hidden = preview.source_type.startsWith("x_");
       if (preview.source_type === "youtube_playlist") {
         select.options[1].textContent = "同步当前列表前 5 条";
@@ -147,8 +148,8 @@ $("#add-form").onsubmit = event => {
       topics:String(form.get("topics") || "").split(",").map(value => value.trim()).filter(Boolean),
     })});
     $("#add-dialog").close();
-    event.currentTarget.reset();
-    delete event.currentTarget.dataset.confirmedUrl;
+    formElement.reset();
+    delete formElement.dataset.confirmedUrl;
     $("#confirm-add").textContent = "检查并添加";
     $("#preview").textContent = "";
     $("#initial-row").hidden = false;
