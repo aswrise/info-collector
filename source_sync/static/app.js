@@ -15,26 +15,43 @@ const selectionId = item => `${item.source_id}\t${item.content_key}`;
 const selectedItems = () => [...selected].map(id => state.items.find(item => selectionId(item) === id)).filter(Boolean);
 const labels = {not_synced:"未同步", disabled:"已禁用", queued:"排队中", syncing:"处理中", synced:"已同步", failed:"失败"};
 const label = value => labels[value] || value;
+const sourceLabels = {youtube_channel:"YouTube 频道", youtube_playlist:"YouTube 播放列表", x_likes:"X Likes", x_list:"X List"};
+const sourceStatusLabels = {complete:"正常", incomplete:"未完成", failed:"异常", paused_risk:"已暂停"};
 function escapeHTML(value = "") {
   const span = document.createElement("span");
   span.textContent = value;
   return span.innerHTML;
 }
 
+function formatDate(value) {
+  if (!value) return "等待首次扫描";
+  const date = new Date(value);
+  return Number.isNaN(date.valueOf()) ? value : new Intl.DateTimeFormat("zh-CN", {
+    month:"short", day:"numeric", hour:"2-digit", minute:"2-digit",
+  }).format(date);
+}
+
 async function refresh() {
   state = await api("/api/state");
-  $("#summary").textContent = `队列 ${state.counts.queued||0} · 处理中 ${state.counts.syncing||0} · 失败 ${state.counts.failed||0}`;
+  $("#summary").innerHTML = `<span><i class="summary-dot queued"></i>队列 <strong>${state.counts.queued||0}</strong></span><span><i class="summary-dot syncing"></i>处理中 <strong>${state.counts.syncing||0}</strong></span><span><i class="summary-dot failed"></i>失败 <strong>${state.counts.failed||0}</strong></span>`;
+  $("#source-count").textContent = `${state.sources.length} 个来源`;
   $("#health").innerHTML = state.sources.map(source => {
     const running = state.runtime?.scans?.[source.id]?.outcome === "running";
     const samples = state.items.filter(item => item.source_id === source.id && item.decision).length;
-    const badge = running ? "扫描中" : source.settings?.shadow_mode ? `影子 ${samples}/50` : source.last_scan_status || "未扫描";
-    return `<article class="card">
-      <div class="card-head"><span>${escapeHTML(source.display_name)}</span><span class="pill ${running?"queued":source.last_scan_status||""}">${badge}</span></div>
-      <p>${escapeHTML(source.source_type)} · ${source.last_scan_at||"等待首次扫描"}${source.last_scan_error ? ` · ${escapeHTML(source.last_scan_error)}` : ""}</p>
-      <button data-scan="${source.id}">扫描</button> ${source.source_type === "youtube_channel" ? `<button data-history="${source.id}">历史视频</button>` : ""} <button data-delete="${source.id}">删除监控</button>
-      ${source.source_type === "x_list" ? `<a href="/api/sources/${source.id}/shadow" target="_blank">导出样本</a>` : ""}
+    const sourceStatus = running ? "queued" : source.last_scan_status || "idle";
+    const badge = running ? "扫描中" : source.settings?.shadow_mode ? `影子模式 ${samples}/50` : sourceStatusLabels[source.last_scan_status] || "未扫描";
+    const platform = source.source_type.startsWith("youtube_") ? "YT" : "X";
+    return `<article class="card ${source.last_scan_error ? "has-error" : ""}">
+      <div class="card-head">
+        <span class="source-icon ${platform === "YT" ? "youtube" : "x"}">${platform}</span>
+        <div class="source-title"><strong>${escapeHTML(source.display_name)}</strong><span>${sourceLabels[source.source_type] || escapeHTML(source.source_type)}</span></div>
+        <span class="pill ${sourceStatus}">${badge}</span>
+      </div>
+      <div class="source-meta"><span>上次扫描</span><time>${formatDate(source.last_scan_at)}</time></div>
+      ${source.last_scan_error ? `<p class="source-error">${escapeHTML(source.last_scan_error)}</p>` : ""}
+      <footer class="card-actions"><button class="subtle" data-scan="${source.id}">立即扫描</button>${source.source_type === "youtube_channel" ? ` <button class="soft" data-history="${source.id}">历史视频</button>` : ""}${source.source_type === "x_list" ? ` <a class="button subtle" href="/api/sources/${source.id}/shadow" target="_blank">查看样本</a>` : ""}<button class="danger" data-delete="${source.id}">移除</button></footer>
     </article>`;
-  }).join("");
+  }).join("") || '<div class="source-empty"><strong>还没有监控来源</strong><span>添加 YouTube 频道、播放列表或 X 来源开始收集。</span></div>';
   const current = $("#source-filter").value;
   $("#source-filter").innerHTML = '<option value="">来源：全部</option>' + state.sources.map(source => `<option value="${source.id}">${escapeHTML(source.display_name)}</option>`).join("");
   $("#source-filter").value = current;
@@ -60,10 +77,10 @@ function renderItems() {
   const sources = new Map(state.sources.map(source => [source.id, source.display_name]));
   const items = visibleItems();
   $("#items").innerHTML = items.map(item => `<tr data-key="${item.content_key}" data-source="${item.source_id}">
-    <td><input type="checkbox" data-select ${selected.has(selectionId(item)) ? "checked" : ""}></td>
-    <td>${escapeHTML(item.title_or_text || item.content_key)}</td>
-    <td>${escapeHTML(sources.get(item.source_id) || "")}</td>
-    <td><span class="pill ${status(item)}">${label(status(item))}</span>${item.sync_status === "queued" ? ` <button data-cancel-job="${item.job_id}">取消同步</button>` : ""} <button data-disable-key="${escapeHTML(item.content_key)}" data-disabled="${item.sync_disabled ? 1 : 0}">${item.sync_disabled ? "启用" : "禁用"}</button></td>
+    <td class="cell-select"><input type="checkbox" data-select aria-label="选择 ${escapeHTML(item.title_or_text || item.content_key)}" ${selected.has(selectionId(item)) ? "checked" : ""}></td>
+    <td class="cell-title"><strong>${escapeHTML(item.title_or_text || item.content_key)}</strong>${item.author ? `<span>${escapeHTML(item.author)}</span>` : ""}</td>
+    <td class="cell-source"><span class="source-chip">${escapeHTML(sources.get(item.source_id) || "")}</span></td>
+    <td class="cell-status"><div class="row-status"><span class="pill ${status(item)}">${label(status(item))}</span><div class="row-actions">${item.sync_status === "queued" ? `<button class="compact" data-cancel-job="${item.job_id}">取消同步</button>` : ""}<button class="compact" data-disable-key="${escapeHTML(item.content_key)}" data-disabled="${item.sync_disabled ? 1 : 0}">${item.sync_disabled ? "启用" : "禁用"}</button></div></div></td>
   </tr>`).join("");
   $("#empty").hidden = items.length > 0;
   $("#batch").hidden = selected.size === 0;

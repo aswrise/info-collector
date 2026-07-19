@@ -8,22 +8,30 @@
 </head>
 <body>
   <main>
-    <header>
-      <div><h1>Source Sync</h1><p id="summary">正在读取本地状态…</p></div>
-      <div class="actions"><button id="scan-all">全部扫描</button><button class="primary" id="add">＋ 添加来源</button></div>
+    <header class="app-header">
+      <div class="title-group">
+        <span class="eyebrow">AUTOMATED COLLECTION</span>
+        <h1>Source Sync</h1>
+        <div id="summary" class="summary">正在读取本地状态…</div>
+      </div>
+      <div class="actions"><button id="scan-all">扫描全部</button><button class="primary" id="add">＋ 添加来源</button></div>
     </header>
+
+    <div class="section-heading"><h2>监控来源</h2><span id="source-count">—</span></div>
     <section id="health" class="health" aria-label="来源健康状态"></section>
+
+    <div class="section-heading content-heading"><h2>内容</h2><span>筛选、检查并控制同步队列</span></div>
     <section class="toolbar" aria-label="筛选">
       <select id="source-filter"><option value="">来源：全部</option></select>
       <select id="status-filter"><option value="">状态：全部</option><option value="not_synced">未同步</option><option value="disabled">已禁用</option><option value="queued">排队中</option><option value="syncing">处理中</option><option value="synced">已同步</option><option value="failed">失败</option></select>
       <select id="decision-filter"><option value="">判定：全部</option><option value="collect">collect</option><option value="review">review</option><option value="noise">noise</option></select>
       <select id="language-filter"><option value="">语言：全部</option><option value="zh">中文</option><option value="en">英文</option><option value="mixed">混合</option></select>
-      <input id="search" type="search" placeholder="关键词">
+      <input id="search" type="search" aria-label="搜索标题" placeholder="搜索标题…">
     </section>
     <section class="batch" id="batch" hidden><span>已选 <strong id="selected-count">0</strong> 条</span><button id="cancel-selected">取消同步</button><button id="disable-selected">禁用</button><button id="mark-noise">标为 noise</button><button id="mark-collect">collect 并同步</button><button id="sync-selected" class="primary">同步所选</button></section>
     <section class="table-wrap">
-      <table><thead><tr><th><input id="select-all" type="checkbox" aria-label="全选"></th><th>标题</th><th>来源</th><th>状态</th></tr></thead><tbody id="items"></tbody></table>
-      <p id="empty" class="empty">还没有内容。先添加一个 YouTube Channel。</p>
+      <table class="content-table"><thead><tr><th><input id="select-all" type="checkbox" aria-label="全选"></th><th>标题</th><th>来源</th><th>状态与操作</th></tr></thead><tbody id="items"></tbody></table>
+      <div id="empty" class="empty"><strong>还没有内容</strong><span>添加来源后，发现的内容会出现在这里。</span></div>
     </section>
   </main>
 
@@ -31,7 +39,7 @@
   <div id="toast" role="status" aria-live="polite"></div>
 
   <dialog id="history-dialog" class="wide-dialog">
-    <header><h2 id="history-title">历史视频</h2><button id="history-close" aria-label="关闭">×</button></header>
+    <header class="dialog-header"><div><span class="eyebrow">YOUTUBE ARCHIVE</span><h2 id="history-title">历史视频</h2></div><button id="history-close" class="icon-button" aria-label="关闭">×</button></header>
     <div class="table-wrap history-table">
       <table><thead><tr><th><input id="history-select-page" type="checkbox" aria-label="选择本页"></th><th>标题</th><th>发布日期</th><th>状态</th></tr></thead><tbody id="history-items"></tbody></table>
       <p id="history-empty" class="empty" hidden>这一页没有视频。</p>
@@ -41,7 +49,7 @@
 
   <dialog id="add-dialog">
     <form method="dialog" id="add-form">
-      <h2>添加来源</h2>
+      <div class="dialog-title"><span class="eyebrow">NEW MONITORED SOURCE</span><h2>添加来源</h2></div>
       <label>Channel / Playlist URL<input name="url" type="url" required placeholder="https://www.youtube.com/@channel"></label>
       <label id="initial-row">首次同步<select name="initial_sync_count"><option value="0">只建立监控</option><option value="5" selected>同步最新 5 条</option><option value="10">同步最新 10 条</option><option value="-1">同步全部</option></select></label>
       <label class="check"><input name="auto_sync_new" type="checkbox">以后发现新内容时自动同步</label>
