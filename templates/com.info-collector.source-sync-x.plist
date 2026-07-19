@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>com.info-collector.source-sync-x</string>
-  <key>ProgramArguments</key><array><string>__PYTHON__</string><string>-m</string><string>source_sync</string><string>scan</string><string>--platform</string><string>x</string></array>
+  <key>ProgramArguments</key><array><string>/usr/bin/sandbox-exec</string><string>-p</string><string>(version 1)(allow default)(deny file-read* file-write* (subpath "__HOME__/Library"))</string><string>__PYTHON__</string><string>-m</string><string>source_sync</string><string>scan</string><string>--platform</string><string>x</string></array>
   <key>WorkingDirectory</key><string>__APP__</string>
   <key>EnvironmentVariables</key><dict><key>HOME</key><string>__HOME__</string><key>PATH</key><string>__PATH__</string></dict>
   <key>StartCalendarInterval</key><array><dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict><dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict></array>

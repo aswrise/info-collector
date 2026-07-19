@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,13 +76,13 @@ class PodcastFlowTest(unittest.TestCase):
                 output = Path(meta["outputDir"])
                 output.mkdir(parents=True)
                 files = []
-                for name in ("Standalone（TLDR）.md", "Standalone（深度总结）.md", "Standalone（全文稿）.md"):
+                for name in ("Standalone（TLDR）.md", "Standalone（1000字总结）.md", "Standalone（全文稿）.md"):
                     path = output / name
                     path.write_text(name, encoding="utf-8")
                     files.append(str(path))
                 Path(meta["resultFile"]).write_text(json.dumps({
-                    "status": "ok", "tldrFile": files[0],
-                    "deepSummaryFile": files[1], "transcriptFile": files[2],
+                    "status": "ok", "digestVersion": 2, "tldrFile": files[0],
+                    "summary1000File": files[1], "transcriptFile": files[2],
                 }), encoding="utf-8")
 
             result = flow.PodcastProcessor(
@@ -89,6 +90,64 @@ class PodcastFlowTest(unittest.TestCase):
             ).process("https://example.test/standalone")
 
             self.assertEqual(Path(result["tldrFile"]).parent, home / "播客收集" / "公共")
+
+    def test_current_digest_requires_1000_and_allows_missing_7000(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            flow = import_flow(home)
+            files = {}
+            for key in ("tldrFile", "summary1000File", "transcriptFile"):
+                path = home / f"{key}.md"
+                path.write_text(key, encoding="utf-8")
+                files[key] = str(path)
+            result_file = home / "result.json"
+            result_file.write_text(json.dumps({
+                "status": "ok", "digestVersion": 2, **files,
+            }), encoding="utf-8")
+
+            result = flow.validate_result(result_file, flow.DIGEST_VERSION)
+            self.assertNotIn("summary7000File", result)
+
+            summary_7000 = home / "summary7000File.md"
+            summary_7000.write_text("summary", encoding="utf-8")
+            result_file.write_text(json.dumps({
+                "status": "ok", "digestVersion": 2,
+                "summary7000File": str(summary_7000), **files,
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(flow.ResolutionError, "summary7000File must be omitted"):
+                flow.validate_result(result_file, flow.DIGEST_VERSION)
+
+            del files["summary1000File"]
+            result_file.write_text(json.dumps({
+                "status": "ok", "digestVersion": 2, **files,
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(flow.ResolutionError, "summary1000File missing"):
+                flow.validate_result(result_file, flow.DIGEST_VERSION)
+
+    def test_current_digest_requires_7000_summary_only_for_long_transcript(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            flow = import_flow(home)
+            files = {}
+            for key in ("tldrFile", "summary1000File", "transcriptFile"):
+                path = home / f"{key}.md"
+                path.write_text("字" * (7000 if key == "transcriptFile" else 1), encoding="utf-8")
+                files[key] = str(path)
+            result_file = home / "result.json"
+            result_file.write_text(json.dumps({
+                "status": "ok", "digestVersion": 2, **files,
+            }), encoding="utf-8")
+
+            with self.assertRaisesRegex(flow.ResolutionError, "summary7000File required"):
+                flow.validate_result(result_file, flow.DIGEST_VERSION)
+
+            summary_7000 = home / "summary7000File.md"
+            summary_7000.write_text("summary", encoding="utf-8")
+            result_file.write_text(json.dumps({
+                "status": "ok", "digestVersion": 2,
+                "summary7000File": str(summary_7000), **files,
+            }), encoding="utf-8")
+            flow.validate_result(result_file, flow.DIGEST_VERSION)
 
     def test_existing_products_move_to_public_and_keep_base_at_root(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -232,6 +291,25 @@ class PodcastFlowTest(unittest.TestCase):
                 flow.call_pi(tmp)
 
             self.assertEqual(ctx.exception.code, "youtube-transcript-unavailable")
+
+    def test_pi_loads_fixed_skill_without_shell_access(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workdir = Path(tmp)
+            (workdir / "source.md").write_text("transcript", encoding="utf-8")
+            flow = import_flow(workdir)
+            with patch.object(flow.subprocess, "run") as run:
+                run.return_value = flow.subprocess.CompletedProcess([], 0, "", "")
+                flow.call_pi(str(workdir))
+
+                command = run.call_args.args[0]
+                self.assertEqual(run.call_args.kwargs["cwd"], str(workdir))
+                self.assertIn("--no-skills", command)
+                self.assertIn("--no-context-files", command)
+                self.assertEqual(command[command.index("--skill") + 1], str(
+                    Path.home() / ".claude" / "skills" / "podcast-digest" / "SKILL.md"
+                ))
+                self.assertEqual(command[command.index("--tools") + 1], "read,write")
+                self.assertIn("Current local time:", command[-1])
 
     def test_youtube_publish_date_parsing(self):
         with tempfile.TemporaryDirectory() as tmp:

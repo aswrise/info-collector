@@ -1,8 +1,8 @@
 # Info Collector
 
 把 Chrome 书签变成本机处理流水线：文章放进「收藏文章」自动翻译成中文
-Markdown；播客 / YouTube 访谈放进「收藏播客」自动生成 TLDR、深度总结和
-全文稿。处理状态在扩展的 Dashboard 里一目了然（待处理 → 处理中 → 已完成），
+Markdown；播客 / YouTube 访谈放进「收藏播客」自动生成 TLDR、1000 字总结、
+按全文长度生成的 7000 字总结和全文稿。处理状态在扩展的 Dashboard 里一目了然（待处理 → 处理中 → 已完成），
 跨设备同步。
 
 Dashboard 长这样：状态卡片、流水线运行时间、逐篇文章的状态与操作按钮：
@@ -76,7 +76,7 @@ Chrome 书签「收藏文章」 → 扩展（队列 + Dashboard） ⇄ 文件桥
 
 Chrome 书签「收藏播客」 → 扩展（队列 + Dashboard） ⇄ 文件桥 ⇄ 播客流（transcript + pi）
                                                               ↓
-                                                     Obsidian「播客收集/公共」三件套
+                                                     Obsidian「播客收集/公共」分层产物
 ```
 
 - **扩展**（MV3）是唯一事实来源：从书签只读导入，状态存 `chrome.storage.sync`

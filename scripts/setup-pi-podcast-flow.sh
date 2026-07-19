@@ -45,8 +45,12 @@ if os.path.exists(path):
     except Exception:
         flows = {}
 home = os.path.expanduser("~")
+sandbox = f'(version 1)(allow default)(deny file-read* file-write* (subpath "{home}/Library"))'
 flows["podcast"] = {
-    "command": [os.environ["PYTHON"], os.environ["FLOW_TARGET"], "--manual"],
+    "command": [
+        "/usr/bin/sandbox-exec", "-p", sandbox,
+        os.environ["PYTHON"], os.environ["FLOW_TARGET"], "--manual",
+    ],
     "lockFile": f"{home}/.pi/logs/podcast-bookmarks.lock",
     "intervalSeconds": 3600,
     "label": os.environ["PLIST_LABEL"],

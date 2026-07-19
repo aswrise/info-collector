@@ -135,14 +135,18 @@ class TweetOrganizer:
 
     @staticmethod
     def _call_pi(workdir: Path) -> None:
+        skill = Path("~/.claude/skills/tweet-organizer/SKILL.md").expanduser()
         prompt = (
-            "Use the tweet-organizer skill.\n\n"
-            f"Workdir: {workdir}\n\n"
-            "Read tweet.json and meta.json. Do not open a browser or fetch URLs. "
+            "The tweet-organizer skill is already loaded. Do not search for skills.\n\n"
+            "Read tweet.json and meta.json in the current directory. "
+            "Do not open a browser or fetch URLs. "
             "Write only meta.json.resultFile."
         )
         try:
-            proc = subprocess.run(["pi", "-p", prompt], text=True, capture_output=True, timeout=900)
+            proc = subprocess.run([
+                "pi", "--no-session", "--no-skills", "--skill", str(skill),
+                "--no-context-files", "--tools", "read,write", "-p", prompt,
+            ], cwd=workdir, text=True, capture_output=True, timeout=900)
         except (OSError, subprocess.TimeoutExpired) as error:
             raise RuntimeError(f"tweet-organizer failed: {error}") from error
         if proc.returncode:

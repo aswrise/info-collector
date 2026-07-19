@@ -1,4 +1,5 @@
 import json
+import plistlib
 import subprocess
 import tempfile
 import threading
@@ -6,6 +7,7 @@ import unittest
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import patch
 
 from source_sync.adapters.youtube import (
     YouTubeChannelAdapter,
@@ -20,7 +22,7 @@ from source_sync.worker import Worker
 from source_sync.runtime import Runtime
 from source_sync.server import SourceSyncHandler
 from processors.tweet import TweetOrganizer
-from processors.value import decide
+from processors.value import ValueEvaluator, decide
 from source_sync.types import ValueDecision
 
 
@@ -89,6 +91,28 @@ class SourceSyncTest(unittest.TestCase):
             ).fetchone()[0],
             "3",
         )
+
+    def test_background_launch_agents_deny_user_library(self):
+        templates = Path(__file__).parents[1] / "templates"
+        for name in (
+            "com.info-collector.source-sync-worker.plist",
+            "com.info-collector.source-sync-x.plist",
+            "com.info-collector.source-sync-youtube.plist",
+            "com.pi.podcast-bookmarks.plist",
+        ):
+            with self.subTest(name=name):
+                arguments = plistlib.loads((templates / name).read_bytes())["ProgramArguments"]
+                self.assertEqual(arguments[:2], ["/usr/bin/sandbox-exec", "-p"])
+                self.assertIn(
+                    '(deny file-read* file-write* (subpath "__HOME__/Library"))',
+                    arguments[2],
+                )
+
+        for name in ("setup-pi-flow.sh", "setup-pi-podcast-flow.sh"):
+            with self.subTest(name=name):
+                setup = (Path(__file__).parents[1] / "scripts" / name).read_text()
+                self.assertIn('"/usr/bin/sandbox-exec", "-p", sandbox', setup)
+                self.assertIn("deny file-read* file-write*", setup)
 
     def test_dashboard_state_uses_request_local_sqlite_connection(self):
         source = self.add_channel()
@@ -535,6 +559,26 @@ class SourceSyncTest(unittest.TestCase):
 
         self.assertEqual(Path(result["outputFile"]).parent, root / "out" / "AI-Product")
         self.assertTrue((root / "out" / "tweet 整理.base").is_file())
+
+    def test_tweet_pi_calls_load_fixed_skills_without_shell_access(self):
+        root = Path(self.tmp.name)
+        calls = [
+            (TweetOrganizer._call_pi, "processors.tweet.subprocess.run", "tweet-organizer"),
+            (ValueEvaluator._call_pi, "processors.value.subprocess.run", "tweet-value-evaluator"),
+        ]
+        for call_pi, target, skill in calls:
+            with self.subTest(skill=skill), patch(target) as run:
+                run.return_value = subprocess.CompletedProcess([], 0, "", "")
+                call_pi(root)
+
+                command = run.call_args.args[0]
+                self.assertEqual(run.call_args.kwargs["cwd"], root)
+                self.assertIn("--no-skills", command)
+                self.assertIn("--no-context-files", command)
+                self.assertEqual(command[command.index("--skill") + 1], str(
+                    Path.home() / ".claude" / "skills" / skill / "SKILL.md"
+                ))
+                self.assertEqual(command[command.index("--tools") + 1], "read,write")
 
     def test_value_thresholds_and_insufficient_context_are_deterministic(self):
         collected = decide("x:1", {

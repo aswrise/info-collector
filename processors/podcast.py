@@ -2,7 +2,7 @@
 # Shared Podcast Processor implementation and legacy queue runner.
 """
 播客流（podcast）：消费 Info Collector 的 podcast outbox，找到既有文稿，
-再交给 pi 的 podcast-digest skill 生成 TLDR / 深度总结 / 全文稿三件套。
+再交给 pi 的 podcast-digest skill 生成 TLDR / 1000 字总结 / 可选 7000 字总结 / 全文稿。
 
 flow 只做确定性工作：spool、锁、网页/字幕提取、语言启发式、workdir、报告。
 不做音频转写，不在 Python 里翻译、总结或写 Obsidian 正文。
@@ -48,6 +48,7 @@ DEFAULT_OUTPUT_DIR = os.path.expanduser(
 
 MAX_PER_RUN = 2
 PI_TIMEOUT = 2700
+DIGEST_VERSION = 2
 MIN_TRANSCRIPT_CHARS = 2000
 FIRECRAWL_TIMEOUT = 120
 DEFUDDLE_TIMEOUT = 120
@@ -567,6 +568,7 @@ def prepare_workdir(article, resolved, output_dir=DEFAULT_OUTPUT_DIR):
         "captionKind": resolved.get("captionKind"),
         "transcriptLanguage": transcript_language,
         "sourceReliability": resolved.get("sourceReliability"),
+        "digestVersion": DIGEST_VERSION,
         "outputDir": str(output_dir),
         "resultFile": result_file,
     }
@@ -584,16 +586,22 @@ def call_pi(workdir):
             "youtube-transcript-unavailable",
             "refusing to start pi without source.md",
         )
+    skill = os.path.expanduser("~/.claude/skills/podcast-digest/SKILL.md")
+    current_time = datetime.now().astimezone().isoformat(timespec="minutes")
     prompt = (
-        "Use the podcast-digest skill.\n\n"
-        f"Workdir: {workdir}\n\n"
-        "Read source.md and meta.json from that directory. Do not open or control a browser, "
+        "The podcast-digest skill is already loaded. Do not search for skills or run shell commands.\n\n"
+        f"Current local time: {current_time}. Use it for the frontmatter date.\n\n"
+        "Read source.md and meta.json in the current directory. Do not open or control a browser, "
         "use browser cookies, or fetch a replacement transcript. "
         "Write only the result JSON to meta.json.resultFile."
     )
     try:
         proc = subprocess.run(
-            ["pi", "-p", prompt],
+            [
+                "pi", "--no-session", "--no-skills", "--skill", skill,
+                "--no-context-files", "--tools", "read,write", "-p", prompt,
+            ],
+            cwd=workdir,
             capture_output=True,
             text=True,
             timeout=PI_TIMEOUT,
@@ -609,7 +617,7 @@ def call_pi(workdir):
         raise ResolutionError("pi-failed", f"pi exit {proc.returncode}")
 
 
-def validate_result(result_file):
+def validate_result(result_file, digest_version=None):
     result = load_json(result_file, None)
     if not isinstance(result, dict):
         raise ResolutionError("pi-failed", "result.json missing or invalid")
@@ -617,18 +625,36 @@ def validate_result(result_file):
         raise ResolutionError(result.get("error") or "pi-failed")
     if result.get("status") != "ok":
         raise ResolutionError("pi-failed", "result.json status is not ok")
-    for key in ("tldrFile", "deepSummaryFile", "transcriptFile"):
+    current = digest_version == DIGEST_VERSION or result.get("digestVersion") == DIGEST_VERSION
+    required = (
+        ("tldrFile", "summary1000File", "transcriptFile")
+        if current else
+        ("tldrFile", "deepSummaryFile", "transcriptFile")
+    )
+    for key in required:
         path = result.get(key)
         if not path or not os.path.exists(os.path.expanduser(path)):
             raise ResolutionError("pi-failed", f"{key} missing")
+    summary_7000 = result.get("summary7000File")
+    if summary_7000 and not os.path.exists(os.path.expanduser(summary_7000)):
+        raise ResolutionError("pi-failed", "summary7000File missing")
+    if current:
+        transcript = Path(result["transcriptFile"]).read_text(encoding="utf-8")
+        if transcript.startswith("---"):
+            parts = transcript.split("---", 2)
+            if len(parts) == 3:
+                transcript = parts[2]
+        needs_7000 = len(re.sub(r"\s+", "", transcript)) >= 7000
+        if needs_7000 != bool(summary_7000):
+            requirement = "required" if needs_7000 else "must be omitted"
+            raise ResolutionError("pi-failed", f"summary7000File {requirement}")
     return result
 
 
 def done_meta(result, meta):
     current_meta = load_json(os.path.join(os.path.dirname(meta["resultFile"]), "meta.json"), meta)
-    return {
+    output = {
         "tldrFile": result["tldrFile"],
-        "deepSummaryFile": result["deepSummaryFile"],
         "transcriptFile": result["transcriptFile"],
         "transcriptSource": current_meta.get("transcriptSource"),
         "transcriptProvider": current_meta.get("transcriptProvider"),
@@ -639,6 +665,13 @@ def done_meta(result, meta):
         "channelUrl": current_meta.get("channelUrl"),
         "published": current_meta.get("published"),
     }
+    if result.get("summary1000File"):
+        output["summary1000File"] = result["summary1000File"]
+    if result.get("summary7000File"):
+        output["summary7000File"] = result["summary7000File"]
+    if result.get("deepSummaryFile"):
+        output["deepSummaryFile"] = result["deepSummaryFile"]
+    return output
 
 
 def migrate_public_outputs(output_root=DEFAULT_OUTPUT_DIR, work_root=WORK_ROOT):
@@ -650,7 +683,10 @@ def migrate_public_outputs(output_root=DEFAULT_OUTPUT_DIR, work_root=WORK_ROOT):
         if not isinstance(result, dict):
             continue
         changed = False
-        for key in ("tldrFile", "deepSummaryFile", "transcriptFile"):
+        for key in (
+            "tldrFile", "summary1000File", "summary7000File",
+            "deepSummaryFile", "transcriptFile",
+        ):
             value = result.get(key)
             if not value:
                 continue
@@ -704,7 +740,10 @@ class PodcastProcessor:
         if not isinstance(meta, dict):
             return None
         try:
-            result = validate_result(meta.get("resultFile") or os.path.join(workdir, "result.json"))
+            result = validate_result(
+                meta.get("resultFile") or os.path.join(workdir, "result.json"),
+                meta.get("digestVersion"),
+            )
         except ResolutionError:
             return None
         return done_meta(result, meta)
@@ -725,7 +764,7 @@ class PodcastProcessor:
         workdir, meta = prepare_workdir(article, resolved, output_dir)
         log(f"🚀 启动 pi -p: {article.get('title') or article['url']}")
         self.pi(workdir)
-        return done_meta(validate_result(meta["resultFile"]), meta)
+        return done_meta(validate_result(meta["resultFile"], meta.get("digestVersion")), meta)
 
 
 def process_article(article):

@@ -69,7 +69,7 @@ The mechanism that retrieved the transcript, such as Defuddle, Firecrawl, yt-dlp
 _Avoid_: source when referring to retrieval mechanism
 
 **Podcast Digest**:
-The output product of the podcast flow for one article: three separate files for TLDR, high-density summary, and full Chinese transcript (cleaned original if the source is Chinese, full translation if English).
+The layered output product of the podcast flow for one article: TLDR, 1000-character summary, optional 7000-character summary when the full Chinese transcript is at least 7000 characters, and the full Chinese transcript itself (cleaned original if the source is Chinese, full translation if English).
 _Avoid_: summary alone when referring to the whole product
 
 **Monitored Source**:

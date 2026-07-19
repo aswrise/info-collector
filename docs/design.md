@@ -1,6 +1,7 @@
 # Article Queue Extension — v1 设计
 
 本文是 v1 的总体设计。领域语言见 `../CONTEXT.md`，关键决策见 `adr/`。
+第二个处理类型（播客流）的设计见 `podcast-design.md`。
 
 ## 总体架构
 

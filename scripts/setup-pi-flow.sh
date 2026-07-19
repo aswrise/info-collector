@@ -33,8 +33,12 @@ if os.path.exists(path):
     except Exception:
         flows = {}
 home = os.path.expanduser("~")
+sandbox = f'(version 1)(allow default)(deny file-read* file-write* (subpath "{home}/Library"))'
 flows["translate"] = {
-    "command": ["/usr/bin/python3", f"{home}/.pi/scripts/translate-bookmarks.py", "--manual"],
+    "command": [
+        "/usr/bin/sandbox-exec", "-p", sandbox,
+        "/usr/bin/python3", f"{home}/.pi/scripts/translate-bookmarks.py", "--manual",
+    ],
     "lockFile": f"{home}/.pi/logs/translate-bookmarks.lock",
     "intervalSeconds": 3600,
     "label": "com.pi.translate-bookmarks",

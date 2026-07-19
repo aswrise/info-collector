@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Podcast 流实现计划</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f7f4;
+      --ink: #1f2328;
+      --muted: #667085;
+      --line: #d9d9d2;
+      --panel: #ffffff;
+      --accent: #0f766e;
+      --warn: #9a5b13;
+      --code: #f1f3f2;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.58 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 40px 28px 72px;
+    }
+    h1, h2, h3 { line-height: 1.22; margin: 0; }
+    h1 { font-size: 34px; letter-spacing: 0; }
+    h2 {
+      font-size: 22px;
+      margin-top: 34px;
+      padding-top: 24px;
+      border-top: 1px solid var(--line);
+    }
+    h3 { font-size: 17px; margin-top: 18px; }
+    p { margin: 10px 0; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+    code {
+      background: var(--code);
+      padding: 2px 5px;
+      border-radius: 5px;
+    }
+    pre {
+      background: #17202a;
+      color: #ecf2f2;
+      padding: 14px 16px;
+      border-radius: 8px;
+      overflow: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0 4px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    th { background: #ecefea; font-weight: 650; }
+    tr:last-child td { border-bottom: 0; }
+    ul, ol { padding-left: 22px; }
+    li { margin: 6px 0; }
+    .lede {
+      margin-top: 12px;
+      max-width: 840px;
+      color: var(--muted);
+      font-size: 16px;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 22px;
+    }
+    .box {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .box strong { display: block; margin-bottom: 4px; }
+    .tag {
+      display: inline-block;
+      margin-right: 6px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: #e6f4f1;
+      color: #0f5f59;
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .tag.warn { background: #fff3d7; color: var(--warn); }
+    .decision {
+      border-left: 4px solid var(--accent);
+      padding-left: 12px;
+      margin: 14px 0;
+    }
+    .muted { color: var(--muted); }
+    .phase {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 18px;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .phase:last-child { border-bottom: 0; }
+    .phase-label {
+      color: var(--accent);
+      font-weight: 750;
+    }
+    @media (max-width: 820px) {
+      main { padding: 28px 18px 56px; }
+      .summary, .phase { grid-template-columns: 1fr; }
+      h1 { font-size: 28px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Podcast 流实现计划</h1>
+    <p class="lede">
+      目标是在现有 Info Collector 队列体系里新增 <code>podcast</code> processing type：
+      从网页文稿或 YouTube transcript 生成三个 Obsidian 文件：
+      TLDR、深度总结、全文稿。本文先列最可能需要你调整的产品与数据决策，
+      机械实现步骤放在底部。
+    </p>
+    <p class="muted">
+      设计依据：
+      <a href="./podcast-design.md">podcast-design.md</a>、
+      <a href="./adr/0005-podcast-transcript-sources.md">ADR 0005</a>、
+      <a href="./adr/0006-youtube-transcript-provider-order.md">ADR 0006</a>。
+    </p>
+  </header>
+
+  <section class="summary" aria-label="implementation summary">
+    <div class="box">
+      <strong>默认路径</strong>
+      网页用 Defuddle；YouTube 用 Firecrawl，再 yt-dlp，最后 Chrome Transcript UI。
+    </div>
+    <div class="box">
+      <strong>生成职责</strong>
+      翻译、清理、标题中文化、摘要、写 Obsidian 全部交给 <code>pi -p</code> skill。
+    </div>
+    <div class="box">
+      <strong>v1 不做</strong>
+      不转音频，不同步 Notion，不依赖 OpenCLI，不默认读主账号 Chrome cookies。
+    </div>
+  </section>
+
+  <section>
+    <h2>最可能要调的决策</h2>
+
+    <div class="decision">
+      <h3>1. 数据模型：把“来源类型”和“获取机制”拆开</h3>
+      <p>
+        推荐保留两个字段：<code>transcript_source</code> 表示文本本身是什么，
+        <code>transcript_provider</code> 表示怎么拿到。Firecrawl 可能返回创作者字幕，
+        也可能返回自动字幕，但它不稳定暴露 kind，所以不能把 provider 当 source。
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>字段</th>
+            <th>推荐值</th>
+            <th>为什么你可能会改</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>transcript_source</code></td>
+            <td><code>webpage_transcript</code> / <code>youtube_manual_caption</code> / <code>youtube_auto_caption</code> / <code>youtube_unknown_caption</code></td>
+            <td>如果你希望 Firecrawl 的结果强行按 manual/auto 分类，需要另做比对或探测。</td>
+          </tr>
+          <tr>
+            <td><code>transcript_provider</code></td>
+            <td><code>defuddle</code> / <code>firecrawl_youtube</code> / <code>yt_dlp</code></td>
+            <td>如果未来接 ScrapeCreators、Apify 或自建服务，这里会扩展。</td>
+          </tr>
+          <tr>
+            <td><code>caption_kind</code></td>
+            <td><code>manual</code> / <code>auto</code> / <code>unknown</code></td>
+            <td>如果你不关心可信度，可以删掉；但保留它能解释全文稿质量差异。</td>
+          </tr>
+          <tr>
+            <td><code>source_reliability</code></td>
+            <td><code>edited</code> / <code>manual_caption</code> / <code>auto_caption</code> / <code>unknown_caption</code></td>
+            <td>如果 Obsidian 里不需要筛选质量，可以只保留 source/provider。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="decision">
+      <h3>2. 新接口：Podcast workdir 是 flow 和 Pi 的唯一边界</h3>
+      <p>
+        flow 不直接调用 LLM，也不写最终 Obsidian 内容。它只准备 <code>source.md</code>
+        和 <code>meta.json</code>，然后调用 <code>pi -p</code>。Pi 写
+        <code>result.json</code>，flow 只校验这个文件。
+      </p>
+      <pre><code>work/podcast/&lt;articleKeyHash&gt;/
+  source.md     # transcript 原文，可能是中文，也可能是英文
+  meta.json     # URL、来源元数据、输出目录、resultFile
+  result.json   # Pi 写入，flow 的唯一成功信号</code></pre>
+      <p>
+        推荐的 <code>result.json</code> 成功形态：
+      </p>
+      <pre><code>{
+  "status": "ok",
+  "tldrFile": "...",
+  "deepSummaryFile": "...",
+  "transcriptFile": "..."
+}</code></pre>
+    </div>
+
+    <div class="decision">
+      <h3>3. 用户可见：新增“保存为播客”，并保持三文件输出</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>界面/产物</th>
+            <th>推荐方案</th>
+            <th>可调整点</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Popup</td>
+            <td>新增 <code>保存为播客</code> 按钮，只创建 <code>podcast</code> job，不创建 translate job。</td>
+            <td>也可以只在 Dashboard 里手动加入队列；但 popup 能从根上避免误翻译竞态。</td>
+          </tr>
+          <tr>
+            <td>Dashboard</td>
+            <td>无当前类型 job 时显示 <code>加入队列</code>；失败原因进 chip title。</td>
+            <td>如果你想少改 UI，Dashboard 加入队列可以 P1；popup 是 P0。</td>
+          </tr>
+          <tr>
+            <td>Obsidian</td>
+            <td><code>播客收集/&lt;中文标题&gt;（TLDR）.md</code>、<code>（深度总结）.md</code>、<code>（全文稿）.md</code></td>
+            <td>如果你嫌文件多，可以改成两个文件，但这会违背当前“三件套”决策。</td>
+          </tr>
+          <tr>
+            <td>Notion</td>
+            <td>v1 不同步。</td>
+            <td>需要新数据库属性集；等本地 Obsidian 跑稳再做。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="decision">
+      <h3>4. YouTube provider 顺序</h3>
+      <p>
+        推荐顺序是 Firecrawl → yt-dlp。拿不到字幕就失败，不打开或控制用户 Chrome。
+      </p>
+      <ol>
+        <li><strong>Firecrawl</strong>：标准 watch URL，抽 <code>## Transcript</code> 后正文，标 <code>youtube_unknown_caption</code>。</li>
+        <li><strong>yt-dlp</strong>：只下载字幕，优先 <code>--write-subs</code>，再 <code>--write-auto-subs</code>。</li>
+        <li><strong>失败</strong>：写入 <code>youtube-transcript-unavailable</code>，等待用户提供有字幕或已有文稿的来源。</li>
+      </ol>
+      <p>
+        被排除在 v1 主路径外：Chrome UI、summarize 的 <code>youtubei/get_transcript</code>、
+        <code>captionTracks.baseUrl</code>、OpenCLI YouTube adapter、音频转写。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>新类型接口</h2>
+
+    <h3>Processing Type</h3>
+    <pre><code>{
+  "id": "podcast",
+  "label": "播客",
+  "autoEnroll": false
+}</code></pre>
+
+    <h3>Completion Report meta</h3>
+    <pre><code>{
+  "tldrFile": "...",
+  "deepSummaryFile": "...",
+  "transcriptFile": "...",
+  "transcriptSource": "webpage_transcript",
+  "transcriptProvider": "defuddle",
+  "captionKind": null,
+  "transcriptLanguage": "zh",
+  "sourceReliability": "edited"
+}</code></pre>
+
+    <h3>Pi skill 输入</h3>
+    <p>
+      Prompt 只传 workdir 路径。skill 自己读 <code>source.md</code> 和
+      <code>meta.json</code>。如果 <code>source.md</code> 不存在且
+      `source.md` 缺失时直接失败；skill 不走 Chrome UI 兜底，也不使用 OpenCLI。
+    </p>
+  </section>
+
+  <section>
+    <h2>实施阶段</h2>
+
+    <div class="phase">
+      <div class="phase-label">阶段 1</div>
+      <div>
+        <h3>Podcast flow 骨架与解析器</h3>
+        <ul>
+          <li>新建 <code>flows/podcast-bookmarks.py</code>，复用 translate flow 的锁、outbox/inbox/status/reported-state 模式。</li>
+          <li>实现非 YouTube 的 Defuddle 路径：正文够长就写 <code>source.md</code>，过短则查 YouTube embed。</li>
+          <li>实现 YouTube URL 标准化、Firecrawl provider、yt-dlp provider、json3/VTT 解析。</li>
+          <li>只做确定性处理；不在 Python 里翻译、总结或改写。</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-label">阶段 2</div>
+      <div>
+        <h3><code>podcast-digest</code> skill</h3>
+        <ul>
+          <li>创建 <code>skills/podcast-digest/SKILL.md</code>。</li>
+          <li>负责标题中文化、正文清理、英文全文翻译、TLDR、深度总结、全文稿写入。</li>
+          <li>实现 Chrome Transcript UI fallback：绑定现有 Chrome，不杀进程，不创建临时 profile。</li>
+          <li>写 <code>result.json</code>，失败也写结构化 error。</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-label">阶段 3</div>
+      <div>
+        <h3>扩展用户入口</h3>
+        <ul>
+          <li>Popup 增加 <code>保存为播客</code>，调用 <code>saveTab({ types: ["podcast"] })</code>。</li>
+          <li><code>saveTab</code> 接受可选 <code>types</code> 覆盖 autoEnroll 类型集，并校验类型已注册。</li>
+          <li>Dashboard 对没有当前类型 job 的记录显示 <code>加入队列</code>。</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-label">阶段 4</div>
+      <div>
+        <h3>安装与注册</h3>
+        <ul>
+          <li>新增 <code>scripts/setup-pi-podcast-flow.sh</code>，复制 flow 和 skill。</li>
+          <li>新增 <code>templates/com.pi.podcast-bookmarks.plist</code>。</li>
+          <li>在 flows registry 中加入 <code>podcast</code> command。</li>
+          <li>Dashboard 手工注册 processing type：<code>podcast</code> / <code>播客</code> / <code>autoEnroll=false</code>。</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-label">阶段 5</div>
+      <div>
+        <h3>验证</h3>
+        <ul>
+          <li>单元测试：Defuddle 长文、短文含 YouTube、短文无 transcript、Firecrawl 403 拒绝、yt-dlp manual 优先、json3/VTT 解析。</li>
+          <li>扩展测试：<code>saveTab(types)</code> 覆盖 autoEnroll；Dashboard <code>setJobStatus</code> 可为缺失 job 创建 pending。</li>
+          <li>真实链路：一篇微信样本跑完整三件套；一篇 YouTube 只跑 transcript provider smoke，不下载音视频。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>验收标准</h2>
+    <ul>
+      <li>保存播客 URL 后，不产生 translate job。</li>
+      <li>非 YouTube 成熟文稿能通过 Defuddle 进入 Pi，产出三个 Obsidian 文件。</li>
+      <li>YouTube 自动字幕和创作者字幕至少各有一个 provider smoke 通过。</li>
+      <li>所有 done 报告都包含三件套文件路径和 transcript 元数据。</li>
+      <li>失败时 Dashboard 能看到明确错误码：<code>no-existing-transcript</code>、<code>youtube-transcript-unavailable</code> 或 <code>pi-failed</code>。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>机械实现清单</h2>
+    <p class="muted">这些是低判断成本的文件级改动，按测试驱动往下做即可。</p>
+    <table>
+      <thead>
+        <tr>
+          <th>区域</th>
+          <th>文件</th>
+          <th>动作</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Flow</td>
+          <td><code>flows/podcast-bookmarks.py</code></td>
+          <td>新增；复用 translate flow 的 spool/lock/status 模式。</td>
+        </tr>
+        <tr>
+          <td>Skill</td>
+          <td><code>skills/podcast-digest/SKILL.md</code></td>
+          <td>新增；Pi 负责所有 LLM 与 Obsidian 写入工作。</td>
+        </tr>
+        <tr>
+          <td>Setup</td>
+          <td><code>scripts/setup-pi-podcast-flow.sh</code>、<code>templates/com.pi.podcast-bookmarks.plist</code></td>
+          <td>新增；复制脚本、skill、launchd plist，并注册 flow。</td>
+        </tr>
+        <tr>
+          <td>Popup</td>
+          <td>现有 popup 相关文件</td>
+          <td>新增保存为播客按钮；扩展 <code>saveTab</code> 参数。</td>
+        </tr>
+        <tr>
+          <td>Dashboard</td>
+          <td>现有 dashboard/table 渲染文件</td>
+          <td>无 job 时显示加入队列按钮。</td>
+        </tr>
+        <tr>
+          <td>Tests</td>
+          <td>现有 node/python test 目录</td>
+          <td>补最小覆盖，不建大测试框架。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+</body>
+</html>

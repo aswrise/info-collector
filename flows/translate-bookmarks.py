@@ -122,6 +122,40 @@ def write_report(results):
     return rid
 
 
+def pi_env():
+    home = os.path.expanduser("~")
+    path = os.environ.get("PATH", "")
+    local_bin = os.path.join(home, ".local", "bin")
+    if local_bin not in path.split(":"):
+        path = f"{local_bin}:{path}" if path else local_bin
+    return {**os.environ, "HOME": home, "PATH": path}
+
+
+def run_pi(url):
+    prompt = (
+        "Translate this article using the translate-article skill. "
+        "Save the translated Markdown file to "
+        "/Users/aqua/D/Documents/ob/obsidian-sync-win-v1/大信息收集/dan koe/翻译/ "
+        "and do not sync it to Notion.\n\n"
+        f"URL: {url}\n\n"
+        'When done, output "ALL_DONE" as the very last line.'
+    )
+    t_start = time.time()
+    try:
+        result = subprocess.run(
+            ["pi", "-p", prompt],
+            capture_output=True,
+            text=True,
+            timeout=PI_TIMEOUT,
+            env=pi_env(),
+        )
+        elapsed = time.time() - t_start
+        return result.returncode == 0 and "ALL_DONE" in (result.stdout or ""), result, elapsed, None
+    except subprocess.TimeoutExpired as e:
+        elapsed = time.time() - t_start
+        return False, e, elapsed, f"pi timeout after {PI_TIMEOUT}s"
+
+
 def main():
     log("=" * 50)
     log(f"开始巡检翻译队列（{TRIGGER}）")
@@ -177,68 +211,51 @@ def main():
         claim_rid = write_report([{"url": u, "status": "processing"} for u in urls])
         log(f"📌 已认领 {len(urls)} 篇（{claim_rid}）")
 
-        url_lines = "\n".join(f"- {u}" for u in urls)
-        prompt = (
-            f"There are {len(pending)} new article(s) to translate from my queue.\n\n"
-            f"Translate ALL of them using the translate-article skill. "
-            f"Use parallel sub-agents — pass skill=\"translate-article\" and just the URL to each sub-agent. "
-            f"The skill handles everything — do NOT write out step-by-step instructions.\n\n"
-            f"URLs:\n{url_lines}\n\n"
-            f"Run sub-agents synchronously (not async) — use wait() to ensure they all finish before you exit. "
-            f"When all are done, output \"ALL_DONE\" as the very last line."
-        )
+        done = 0
+        last_report = claim_rid
+        attempts = []
+        # ponytail: serial Pi calls keep per-article reports simple; parallelize only if queue volume needs it.
+        for a in pending:
+            url = a["url"]
+            log(f"🚀 启动 pi -p: {a.get('title', '?')}")
+            success, result, elapsed, error = run_pi(url)
+            code = getattr(result, "returncode", None)
+            log(f"⏱ pi 运行 {elapsed:.0f}s，退出码: {code if code is not None else 'timeout'}")
 
-        log("🚀 启动 pi -p ...")
-        t_start = time.time()
-        result = subprocess.run(
-            ["pi", "-p", prompt],
-            capture_output=True,
-            text=True,
-            timeout=PI_TIMEOUT,
-            env={**os.environ, "HOME": os.path.expanduser("~")},
-        )
-        elapsed = time.time() - t_start
-        # 退出码 0 还不够：pi 可能子任务失败却仍以 0 退出。要求它按 prompt
-        # 约定输出的 ALL_DONE 标记，缺失则视为失败并重试，避免误标 done 丢文章。
-        # 权衡：ALL_DONE 是整批标记，部分成功（已译若干篇但没打出 ALL_DONE）会
-        # 整批重试，可能重复翻译已保存的几篇。这里宁可重复也不静默丢文章——
-        # 想要逐篇精确到 done/failed 请改用 translate-claude-api.py（按篇报告）。
-        success = result.returncode == 0 and "ALL_DONE" in (result.stdout or "")
-        log(f"⏱ pi 运行 {elapsed:.0f}s，退出码: {result.returncode}")
+            stdout = getattr(result, "stdout", None)
+            stderr = getattr(result, "stderr", None)
+            if stdout:
+                for line in stdout.strip().split("\n")[-10:]:
+                    log(f"  | {line[:300]}")
+            if stderr:
+                log(f"pi 错误: {str(stderr)[:500]}")
 
-        if result.stdout:
-            for line in result.stdout.strip().split("\n")[-10:]:
-                log(f"  | {line[:300]}")
-        if result.stderr:
-            log(f"pi 错误: {result.stderr[:500]}")
+            now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            if success:
+                rid = write_report([{"url": url, "status": "done", "processedAt": now}])
+                state[a.get("articleKey") or url] = now
+                atomic_write_json(STATE_FILE, state)
+                done += 1
+                log(f"✅ 翻译成功，报告已写入 inbox: {rid}")
+            else:
+                rid = write_report([{
+                    "url": url, "status": "failed", "processedAt": now,
+                    "meta": {"error": error or f"pi exit {code}"},
+                }])
+                log(f"❌ 翻译失败，失败报告已写入 inbox: {rid}，下次重试")
+            last_report = rid
+            attempts.append({"title": a.get("title", "?"), "url": url, "success": success})
 
-        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        if success:
-            results = [{"url": u, "status": "done", "processedAt": now} for u in urls]
-            rid = write_report(results)
-            for a in pending:
-                state[a.get("articleKey") or a["url"]] = now
-            atomic_write_json(STATE_FILE, state)
-            log(f"✅ 翻译成功，报告已写入 inbox: {rid}")
-            finish("success", count=len(pending), reportId=rid)
-        else:
-            results = [{
-                "url": u, "status": "failed", "processedAt": now,
-                "meta": {"error": f"pi exit {result.returncode}"},
-            } for u in urls]
-            rid = write_report(results)
-            log(f"❌ 翻译失败，失败报告已写入 inbox: {rid}，下次重试")
-            finish("failed", count=len(pending), reportId=rid)
+        finish("success" if done == len(pending) else "failed",
+               count=done, reportId=last_report)
 
         append_history({
             "time": time.strftime("%Y-%m-%d %H:%M:%S"),
             "action": "translate",
             "trigger": TRIGGER,
-            "status": "success" if success else "failed",
-            "pi_exit_code": result.returncode,
-            "pi_duration_s": round(elapsed),
-            "report_id": rid,
-            "attempted": [{"title": a.get("title", "?"), "url": a["url"]} for a in pending],
+            "status": "success" if done == len(pending) else "failed",
+            "report_id": last_report,
+            "attempted": attempts,
         })
 
     except Exception as e:

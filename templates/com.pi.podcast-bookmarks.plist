@@ -8,6 +8,9 @@
 
     <key>ProgramArguments</key>
     <array>
+        <string>/usr/bin/sandbox-exec</string>
+        <string>-p</string>
+        <string>(version 1)(allow default)(deny file-read* file-write* (subpath "__HOME__/Library"))</string>
         <string>__PYTHON__</string>
         <string>__HOME__/.pi/scripts/podcast-bookmarks.py</string>
     </array>

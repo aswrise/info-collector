@@ -1,6 +1,6 @@
 ---
 name: podcast-digest
-description: 根据 Info Collector podcast flow 的 workdir 生成播客三件套：TLDR、深度总结、中文全文稿。
+description: 根据 Info Collector podcast flow 的 workdir 生成 TLDR、1000 字总结、按需生成的 7000 字总结和中文全文稿。
 ---
 
 # Podcast Digest
@@ -12,30 +12,12 @@ description: 根据 Info Collector podcast flow 的 workdir 生成播客三件�
 
 输出只以 `meta.json` 里的 `resultFile` 为准。stdout 不算成功信号。
 
-## 1. 补 transcript（仅按需）
+## 1. transcript 来源契约
 
-如果 `source.md` 不存在，且 `meta.json` 里有
-`resolutionStatus=needs_browser_resolution`：
+`source.md` 必须由上游 flow 先写入既有网页文稿或字幕。
 
-1. 用 Browser Use / Chrome 绑定用户现有且已登录的 Chrome。
-2. 打开 `mediaSource`。
-3. 读取 YouTube Transcript panel，或页面可用时点击 `Copy Transcript`。
-4. 把 transcript 写入 `source.md`。
-5. 更新 `meta.json`：
-   - `transcriptSource: youtube_unknown_caption`
-   - `transcriptProvider: chrome_transcript_ui`
-   - `captionKind: unknown`
-   - `sourceReliability: unknown_caption`
-   - `transcriptLanguage: zh|en`
-
-禁止杀掉或重启用户 Chrome，禁止创建临时 `--user-data-dir` profile。
-无法绑定现有登录态时，写：
-
-```json
-{"status":"failed","error":"youtube-login-required"}
-```
-
-绑定成功但页面没有 transcript 时，写：
+这个 skill 不打开或控制浏览器，不读取浏览器 Cookie，也不为补字幕调用其它抓取器。
+若 `source.md` 不存在，直接写：
 
 ```json
 {"status":"failed","error":"youtube-transcript-unavailable"}
@@ -51,17 +33,22 @@ date +%Y-%m-%dT%H:%M
 
 frontmatter 的 `date` 必须使用这个真实输出。
 
-## 3. 生成三件套
+## 3. 生成分层产物
 
 输出目录是 `meta.json.outputDir`。确保目录存在。
 
-生成三个独立 Markdown 文件：
+始终生成三个独立 Markdown 文件：
 
 - `<中文标题>（TLDR）.md`
-- `<中文标题>（深度总结）.md`
+- `<中文标题>（1000字总结）.md`
 - `<中文标题>（全文稿）.md`
 
-三个文件都写 frontmatter：
+全文稿去掉 frontmatter 后的非空白正文字符数达到 7000 时，再生成：
+
+- `<中文标题>（7000字总结）.md`
+
+按上述口径少于 7000 字符时不得生成 7000 字总结；已有同名旧文件时不要把它写进本次
+`result.json`。所有本次生成的文件都写 frontmatter：
 
 ```yaml
 ---
@@ -75,7 +62,7 @@ channel_url: <频道 URL，可空>
 category: 播客
 duration: <时长，可空>
 transcript_source: webpage_transcript | youtube_manual_caption | youtube_auto_caption | youtube_unknown_caption
-transcript_provider: defuddle | firecrawl_youtube | yt_dlp | chrome_transcript_ui
+transcript_provider: defuddle | firecrawl_youtube | yt_dlp
 caption_kind: manual | auto | unknown
 transcript_language: zh | en
 source_reliability: edited | manual_caption | auto_caption | unknown_caption
@@ -87,13 +74,20 @@ source_reliability: edited | manual_caption | auto_caption | unknown_caption
 约 500 汉字（450-650），一段式核心结论。文件内链接：
 
 ```markdown
-相关：[[<中文标题>（深度总结）]] / [[<中文标题>（全文稿）]]
+相关：[[<中文标题>（1000字总结）]] / [[<中文标题>（全文稿）]]
 ```
 
-### 深度总结
+仅在本次生成 7000 字总结时，在相关链接中加入
+`[[<中文标题>（7000字总结）]]`。
 
-约 7000 汉字（6000-8000）。保留论证链、关键数据、金句引用。全文稿不足
-1.2 万汉字时，压缩到全文 50-60%，不硬凑长度。
+### 1000 字总结
+
+约 1000 汉字（900-1100）。提炼核心观点、关键依据和重要细节，不按时间线复述。
+
+### 7000 字总结
+
+只在全文稿去掉 frontmatter 后的非空白正文字符数达到 7000 时生成。约 7000 汉字（6000-8000），保留论证链、
+关键数据、金句引用，不按时间线复述。
 
 ### 全文稿
 
@@ -119,11 +113,15 @@ YouTube 来源必须记录频道账号：
 ```json
 {
   "status": "ok",
+  "digestVersion": 2,
   "tldrFile": "/absolute/path/标题（TLDR）.md",
-  "deepSummaryFile": "/absolute/path/标题（深度总结）.md",
+  "summary1000File": "/absolute/path/标题（1000字总结）.md",
+  "summary7000File": "/absolute/path/标题（7000字总结）.md",
   "transcriptFile": "/absolute/path/标题（全文稿）.md"
 }
 ```
+
+全文稿按上述非空白正文字符口径少于 7000 时，省略 `summary7000File`。
 
 任何失败都写：
 
