@@ -4,3 +4,4 @@
 @media(max-width:680px){main{padding:20px 12px}header{align-items:flex-start}.actions{flex-direction:column}.toolbar{align-items:stretch;flex-wrap:wrap}.toolbar input{margin:0;min-width:100%}th:nth-child(3),td:nth-child(3){display:none}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}button:active{transform:none}}
 .scores{display:grid;grid-template-columns:1fr auto;gap:6px;padding:12px;border:1px solid var(--line);border-radius:8px;margin:14px 0}.detail-actions{display:flex;gap:8px}.detail-actions button{flex:1}
+.wide-dialog{width:min(920px,95vw)}.wide-dialog header{margin-bottom:12px}.wide-dialog h2{margin:0}.history-table{max-height:65vh;overflow:auto}.history-footer{align-items:center;margin-top:12px}.history-selection{margin-left:auto}button:disabled{cursor:not-allowed;opacity:.5}

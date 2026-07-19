@@ -51,25 +51,47 @@ class SourceSyncService:
                 errors.append(str(error))
         raise ValueError(errors[-1] if errors else "unsupported source URL")
 
+    def youtube_history(self, source_id: int, page: int, page_size: int = 20) -> dict:
+        if page < 1 or page > 10_000:
+            raise ValueError("page must be between 1 and 10000")
+        source = self.registry.get_source(source_id)
+        if source.source_type != "youtube_channel":
+            raise ValueError("history is only available for YouTube channels")
+        result = self.adapters["youtube_channel"].history(source, page, page_size)
+        self.registry.record_scan(source.id, result, complete=False)
+        self._unsynced(result.items)
+        keys = [item.content_key for item in result.items]
+        return {
+            "page": page,
+            "page_size": page_size,
+            "has_previous": page > 1,
+            "has_next": not result.exhausted,
+            "items": self.registry.list_items(source.id, keys),
+        }
+
     def add_source(self, preview: SourcePreview, initial_sync_count: int | None = 5, **options):
         source = self.registry.add_source(preview, **options)
         if preview.source_type == "x_likes":
             self._import_tweet_baseline(source.id)
         if preview.recent_items:
             self.registry.record_scan(source.id, ScanPage(preview.recent_items))
-            unsynced = []
-            for item in preview.recent_items:
-                existing = self.podcast.lookup(item.canonical_url)
-                if existing:
-                    self.registry.record_synced(item.content_key, "podcast", existing)
-                else:
-                    unsynced.append(item.content_key)
+            unsynced = self._unsynced(preview.recent_items)
             if initial_sync_count is None or initial_sync_count > 0:
                 self.registry.enqueue(
                     unsynced if initial_sync_count is None else unsynced[:initial_sync_count],
                     "podcast", "initial_import", source.display_name,
                 )
         return self.registry.get_source(source.id)
+
+    def _unsynced(self, items: list[DiscoveredItem]) -> list[str]:
+        unsynced = []
+        for item in items:
+            existing = self.podcast.lookup(item.canonical_url)
+            if existing:
+                self.registry.record_synced(item.content_key, "podcast", existing)
+            else:
+                unsynced.append(item.content_key)
+        return unsynced
 
     def _import_tweet_baseline(self, source_id: int) -> int:
         found = []

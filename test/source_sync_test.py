@@ -198,6 +198,55 @@ class SourceSyncTest(unittest.TestCase):
             "https://www.youtube.com/@example/videos",
         ])
 
+    def test_channel_history_fetches_one_bounded_page(self):
+        calls = []
+
+        def runner(command):
+            calls.append(command)
+            rows = [json.dumps({"id": str(index), "title": f"Video {index}"})
+                    for index in range(21)]
+            return subprocess.CompletedProcess(command, 0, "\n".join(rows), "")
+
+        source = self.add_channel()
+        page = YouTubeChannelAdapter(runner).history(source, 3)
+
+        self.assertEqual(len(page.items), 20)
+        self.assertEqual((page.items[0].position, page.items[-1].position), (40, 59))
+        self.assertEqual(page.next_checkpoint, "4")
+        self.assertFalse(page.exhausted)
+        self.assertEqual(calls[0], [
+            "yt-dlp", "--flat-playlist", "--playlist-start", "41",
+            "--playlist-end", "61", "--dump-json",
+            "https://www.youtube.com/@example/videos",
+        ])
+
+    def test_browsing_channel_history_records_items_without_queueing_them(self):
+        source = self.add_channel()
+
+        class Adapter:
+            def history(self, _source, page, page_size):
+                self.request = (page, page_size)
+                return ScanPage([item("older", 20)], next_checkpoint="3", exhausted=False)
+
+        adapter = Adapter()
+        class Podcast:
+            def lookup(self, _url):
+                return None
+
+        service = SourceSyncService(
+            self.registry, adapters={"youtube_channel": adapter}, podcast=Podcast()
+        )
+
+        result = service.youtube_history(source.id, 2)
+
+        self.assertEqual(adapter.request, (2, 20))
+        self.assertEqual(result["items"][0]["content_key"], "youtube:older")
+        self.assertTrue(result["has_previous"])
+        self.assertTrue(result["has_next"])
+        self.assertIsNone(self.registry.db.execute(
+            "SELECT 1 FROM sync_jobs WHERE content_key='youtube:older'"
+        ).fetchone())
+
     def test_snapshot_diff_marks_removed_and_readding_restores_present(self):
         source = self.add_channel()
         self.registry.record_scan(source.id, ScanPage([item("a"), item("b", 1)], is_snapshot=True))

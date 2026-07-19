@@ -30,6 +30,15 @@
   <aside id="drawer" aria-hidden="true"><button class="close" aria-label="关闭">×</button><div id="detail"></div></aside>
   <div id="toast" role="status" aria-live="polite"></div>
 
+  <dialog id="history-dialog" class="wide-dialog">
+    <header><h2 id="history-title">历史视频</h2><button id="history-close" aria-label="关闭">×</button></header>
+    <div class="table-wrap history-table">
+      <table><thead><tr><th><input id="history-select-page" type="checkbox" aria-label="选择本页"></th><th>标题</th><th>发布日期</th><th>状态</th></tr></thead><tbody id="history-items"></tbody></table>
+      <p id="history-empty" class="empty" hidden>这一页没有视频。</p>
+    </div>
+    <footer class="history-footer"><button id="history-previous">上一页</button><span id="history-page">第 1 页</span><button id="history-next">下一页</button><span class="history-selection">已选 <strong id="history-selected-count">0</strong> 条</span><button id="sync-history" class="primary" disabled>同步所选</button></footer>
+  </dialog>
+
   <dialog id="add-dialog">
     <form method="dialog" id="add-form">
       <h2>添加来源</h2>

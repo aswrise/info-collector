@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from dataclasses import asdict
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from .registry import SourceRegistry
 from .service import SourceSyncService
@@ -29,21 +29,34 @@ class SourceSyncHandler(SimpleHTTPRequestHandler):
             return self._get_api()
 
     def _get_api(self):
-        if self.path == "/api/state":
-            sources = [asdict(source) for source in self.registry.list_sources()]
-            items = self.registry.list_items()
-            counts = {status: 0 for status in ("queued", "syncing", "synced", "failed")}
-            for item in items:
-                if item["sync_status"] in counts:
-                    counts[item["sync_status"]] += 1
-            return self._json({
-                "sources": sources, "items": items, "counts": counts,
-                "runtime": Runtime(self.registry.path.parent).status(),
-            })
-        source_id = self._source_action("shadow")
-        if source_id is not None:
-            return self._json({"samples": self.registry.shadow_samples(source_id)})
-        return self.send_error(404)
+        try:
+            if self.path == "/api/state":
+                sources = [asdict(source) for source in self.registry.list_sources()]
+                items = self.registry.list_items()
+                counts = {status: 0 for status in ("queued", "syncing", "synced", "failed")}
+                for item in items:
+                    if item["sync_status"] in counts:
+                        counts[item["sync_status"]] += 1
+                return self._json({
+                    "sources": sources, "items": items, "counts": counts,
+                    "runtime": Runtime(self.registry.path.parent).status(),
+                })
+            source_id = self._source_action("history")
+            if source_id is not None:
+                query = parse_qs(urlparse(self.path).query)
+                return self._json(self.service.youtube_history(
+                    source_id, int(query.get("page", ["1"])[0])
+                ))
+            source_id = self._source_action("shadow")
+            if source_id is not None:
+                return self._json({"samples": self.registry.shadow_samples(source_id)})
+            return self.send_error(404)
+        except KeyError:
+            return self._json({"error": "not found"}, 404)
+        except ValueError as error:
+            return self._json({"error": str(error)}, 400)
+        except Exception as error:
+            return self._json({"error": str(error)}, 500)
 
     def do_POST(self):
         with self._request_context():

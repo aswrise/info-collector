@@ -41,7 +41,7 @@ def normalize_youtube_source(url: str) -> tuple[str, str, str]:
     return "youtube_channel", f"https://www.youtube.com{path}", external_id
 
 
-def _items(stdout: str) -> list[DiscoveredItem]:
+def _items(stdout: str, position_offset: int = 0) -> list[DiscoveredItem]:
     found = []
     for position, line in enumerate(stdout.splitlines()):
         if not line.strip():
@@ -71,7 +71,7 @@ def _items(stdout: str) -> list[DiscoveredItem]:
             data.get("title") or video_id,
             author,
             published,
-            position,
+            position + position_offset,
             data,
         ))
     return found
@@ -92,6 +92,22 @@ class YouTubeChannelAdapter:
     def scan(self, source: Source, checkpoint: str | None = None) -> ScanPage:
         depth = int(source.settings.get("scan_depth", 5))
         return ScanPage(self._scan(source.canonical_url, depth), is_snapshot=False)
+
+    def history(self, source: Source, page: int, page_size: int = 20) -> ScanPage:
+        start = (page - 1) * page_size + 1
+        proc = self.runner([
+            "yt-dlp", "--flat-playlist", "--playlist-start", str(start),
+            "--playlist-end", str(start + page_size), "--dump-json",
+            f"{source.canonical_url}/videos",
+        ])
+        if proc.returncode:
+            raise RuntimeError((proc.stderr or "yt-dlp failed").strip()[:500])
+        items = _items(proc.stdout, start - 1)
+        has_next = len(items) > page_size
+        return ScanPage(
+            items[:page_size], str(page + 1) if has_next else None,
+            exhausted=not has_next,
+        )
 
     def _scan(self, url: str, depth: int) -> list[DiscoveredItem]:
         proc = self.runner([

@@ -1,5 +1,7 @@
 const $ = selector => document.querySelector(selector);
 let state = {sources: [], items: [], counts: {}}, selected = new Set();
+let history = {sourceId: null, page: 1, items: [], has_previous: false, has_next: false};
+const historySelected = new Set();
 
 async function api(path, options = {}) {
   const response = await fetch(path, {headers: {"Content-Type": "application/json"}, ...options});
@@ -29,7 +31,7 @@ async function refresh() {
     return `<article class="card">
       <div class="card-head"><span>${escapeHTML(source.display_name)}</span><span class="pill ${running?"queued":source.last_scan_status||""}">${badge}</span></div>
       <p>${escapeHTML(source.source_type)} · ${source.last_scan_at||"等待首次扫描"}${source.last_scan_error ? ` · ${escapeHTML(source.last_scan_error)}` : ""}</p>
-      <button data-scan="${source.id}">扫描</button> <button data-delete="${source.id}">删除监控</button>
+      <button data-scan="${source.id}">扫描</button> ${source.source_type === "youtube_channel" ? `<button data-history="${source.id}">历史视频</button>` : ""} <button data-delete="${source.id}">删除监控</button>
       ${source.source_type === "x_list" ? `<a href="/api/sources/${source.id}/shadow" target="_blank">导出样本</a>` : ""}
     </article>`;
   }).join("");
@@ -66,6 +68,37 @@ function renderItems() {
   $("#empty").hidden = items.length > 0;
   $("#batch").hidden = selected.size === 0;
   $("#selected-count").textContent = selected.size;
+}
+
+function renderHistory() {
+  $("#history-items").innerHTML = history.items.map(item => `<tr>
+    <td><input type="checkbox" data-history-select="${escapeHTML(item.content_key)}" ${historySelected.has(item.content_key) ? "checked" : ""}></td>
+    <td>${escapeHTML(item.title_or_text || item.content_key)}</td>
+    <td>${escapeHTML(item.published_at || "—")}</td>
+    <td><span class="pill ${status(item)}">${label(status(item))}</span></td>
+  </tr>`).join("");
+  $("#history-empty").hidden = history.items.length > 0;
+  $("#history-page").textContent = `第 ${history.page} 页`;
+  $("#history-previous").disabled = !history.has_previous;
+  $("#history-next").disabled = !history.has_next;
+  $("#history-selected-count").textContent = historySelected.size;
+  $("#sync-history").disabled = historySelected.size === 0;
+  $("#history-select-page").checked = history.items.length > 0 && history.items.every(item => historySelected.has(item.content_key));
+}
+
+async function loadHistory(page) {
+  $("#history-items").innerHTML = '<tr><td colspan="4">正在读取历史视频…</td></tr>';
+  history = {sourceId: history.sourceId, ...await api(`/api/sources/${history.sourceId}/history?page=${page}`)};
+  renderHistory();
+}
+
+async function openHistory(sourceId) {
+  const source = state.sources.find(item => item.id === sourceId);
+  history = {sourceId, page: 1, items: [], has_previous: false, has_next: false};
+  historySelected.clear();
+  $("#history-title").textContent = `${source?.display_name || "YouTube"} · 历史视频`;
+  $("#history-dialog").showModal();
+  try { await loadHistory(1); } catch (error) { toast(error.message); }
 }
 
 function showDetail(item) {
@@ -137,6 +170,12 @@ document.addEventListener("click", event => {
     }
     return;
   }
+  const historyButton = event.target.closest("[data-history]");
+  if (historyButton) {
+    event.stopPropagation();
+    openHistory(Number(historyButton.dataset.history));
+    return;
+  }
   const scan = event.target.closest("[data-scan]");
   if (scan) act(async () => { await api(`/api/sources/${scan.dataset.scan}/scan`, {method:"POST", body:"{}"}); toast("扫描完成"); });
   const remove = event.target.closest("[data-delete]");
@@ -150,6 +189,26 @@ $("#detail").onclick = event => {
   if (button) override([$("#detail").dataset.key], Number($("#detail").dataset.source), button.dataset.override);
 };
 $("#drawer .close").onclick = () => { $("#drawer").classList.remove("open"); $("#drawer").setAttribute("aria-hidden", "true"); };
+$("#history-close").onclick = () => $("#history-dialog").close();
+$("#history-previous").onclick = () => loadHistory(history.page - 1).catch(error => toast(error.message));
+$("#history-next").onclick = () => loadHistory(history.page + 1).catch(error => toast(error.message));
+$("#history-items").onchange = event => {
+  const key = event.target.dataset.historySelect;
+  if (!key) return;
+  event.target.checked ? historySelected.add(key) : historySelected.delete(key);
+  renderHistory();
+};
+$("#history-select-page").onchange = event => {
+  for (const item of history.items) event.target.checked ? historySelected.add(item.content_key) : historySelected.delete(item.content_key);
+  renderHistory();
+};
+$("#sync-history").onclick = () => act(async () => {
+  const items = [...historySelected].map(content_key => ({content_key, source_id:history.sourceId}));
+  const result = await api("/api/enqueue", {method:"POST", body:JSON.stringify({items})});
+  historySelected.clear();
+  await loadHistory(history.page);
+  toast(`已加入 ${result.queued} 条 · 跳过 ${result.skipped_synced + result.skipped_active + result.skipped_disabled} 条`);
+});
 $("#add").onclick = () => $("#add-dialog").showModal();
 $("#add-form").onsubmit = event => {
   if (event.submitter?.value === "cancel") return;

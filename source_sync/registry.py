@@ -425,9 +425,21 @@ class SourceRegistry:
                 )
         return status
 
-    def list_items(self, source_id: int | None = None) -> list[dict]:
-        where = "WHERE r.source_id=?" if source_id is not None else ""
-        params = (source_id,) if source_id is not None else ()
+    def list_items(
+        self, source_id: int | None = None, content_keys: Iterable[str] | None = None
+    ) -> list[dict]:
+        keys = list(dict.fromkeys(content_keys)) if content_keys is not None else None
+        clauses = []
+        params: list = []
+        if source_id is not None:
+            clauses.append("r.source_id=?")
+            params.append(source_id)
+        if keys is not None:
+            if not keys:
+                return []
+            clauses.append(f"i.content_key IN ({','.join('?' for _ in keys)})")
+            params.extend(keys)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         rows = self.db.execute(
             f"""SELECT i.*, r.source_id, r.status AS relationship_status,
                        j.id AS job_id, j.status AS sync_status, j.last_error, j.result_json,
@@ -445,9 +457,13 @@ class SourceRegistry:
                 )
                 {where}
                 ORDER BY COALESCE(i.published_at, i.created_at) DESC""",
-            params,
+            tuple(params),
         ).fetchall()
-        return [dict(row) for row in rows]
+        items = [dict(row) for row in rows]
+        if keys is not None:
+            by_key = {item["content_key"]: item for item in items}
+            return [by_key[key] for key in keys if key in by_key]
+        return items
 
     @staticmethod
     def _source(row: sqlite3.Row) -> Source:
