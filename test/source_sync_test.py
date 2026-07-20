@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from source_sync.adapters.youtube import (
     YouTubeChannelAdapter,
+    YouTubePlaylistAdapter,
     content_key,
     normalize_youtube_source,
 )
@@ -237,6 +238,29 @@ class SourceSyncTest(unittest.TestCase):
             "https://www.youtube.com/@example/videos",
         ])
 
+    def test_playlist_history_fetches_one_bounded_page(self):
+        calls = []
+
+        def runner(command):
+            calls.append(command)
+            rows = [json.dumps({"id": str(index), "title": f"Video {index}"})
+                    for index in range(21)]
+            return subprocess.CompletedProcess(command, 0, "\n".join(rows), "")
+
+        source = self.registry.add_source(SourcePreview(
+            "youtube_playlist", "https://www.youtube.com/playlist?list=PL1",
+            "PL1", "Training Data", 21, [],
+        ))
+        page = YouTubePlaylistAdapter(runner).history(source, 2)
+
+        self.assertEqual(len(page.items), 20)
+        self.assertFalse(page.exhausted)
+        self.assertEqual(calls[0], [
+            "yt-dlp", "--flat-playlist", "--playlist-start", "21",
+            "--playlist-end", "41", "--dump-json",
+            "https://www.youtube.com/playlist?list=PL1",
+        ])
+
     def test_browsing_channel_history_records_items_without_queueing_them(self):
         source = self.add_channel()
 
@@ -263,6 +287,27 @@ class SourceSyncTest(unittest.TestCase):
         self.assertIsNone(self.registry.db.execute(
             "SELECT 1 FROM sync_jobs WHERE content_key='youtube:older'"
         ).fetchone())
+
+    def test_browsing_playlist_history_uses_playlist_adapter(self):
+        source = self.registry.add_source(SourcePreview(
+            "youtube_playlist", "https://www.youtube.com/playlist?list=PL1",
+            "PL1", "Training Data", 1, [],
+        ))
+
+        class Adapter:
+            def history(self, _source, page, page_size):
+                self.request = (page, page_size)
+                return ScanPage([item("playlist-old")], exhausted=True)
+
+        adapter = Adapter()
+        service = SourceSyncService(
+            self.registry, adapters={"youtube_playlist": adapter}
+        )
+
+        result = service.youtube_history(source.id, 1)
+
+        self.assertEqual(adapter.request, (1, 20))
+        self.assertEqual(result["items"][0]["content_key"], "youtube:playlist-old")
 
     def test_snapshot_diff_marks_removed_and_readding_restores_present(self):
         source = self.add_channel()

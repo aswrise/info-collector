@@ -55,9 +55,9 @@ class SourceSyncService:
         if page < 1 or page > 10_000:
             raise ValueError("page must be between 1 and 10000")
         source = self.registry.get_source(source_id)
-        if source.source_type != "youtube_channel":
-            raise ValueError("history is only available for YouTube channels")
-        result = self.adapters["youtube_channel"].history(source, page, page_size)
+        if source.source_type not in {"youtube_channel", "youtube_playlist"}:
+            raise ValueError("history is only available for YouTube sources")
+        result = self.adapters[source.source_type].history(source, page, page_size)
         self.registry.record_scan(source.id, result, complete=False)
         self._unsynced(result.items)
         keys = [item.content_key for item in result.items]

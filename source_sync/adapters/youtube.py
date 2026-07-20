@@ -77,6 +77,22 @@ def _items(stdout: str, position_offset: int = 0) -> list[DiscoveredItem]:
     return found
 
 
+def _history(runner: Runner, url: str, page: int, page_size: int) -> ScanPage:
+    start = (page - 1) * page_size + 1
+    proc = runner([
+        "yt-dlp", "--flat-playlist", "--playlist-start", str(start),
+        "--playlist-end", str(start + page_size), "--dump-json", url,
+    ])
+    if proc.returncode:
+        raise RuntimeError((proc.stderr or "yt-dlp failed").strip()[:500])
+    items = _items(proc.stdout, start - 1)
+    has_next = len(items) > page_size
+    return ScanPage(
+        items[:page_size], str(page + 1) if has_next else None,
+        exhausted=not has_next,
+    )
+
+
 class YouTubeChannelAdapter:
     def __init__(self, runner: Runner = _run):
         self.runner = runner
@@ -94,20 +110,7 @@ class YouTubeChannelAdapter:
         return ScanPage(self._scan(source.canonical_url, depth), is_snapshot=False)
 
     def history(self, source: Source, page: int, page_size: int = 20) -> ScanPage:
-        start = (page - 1) * page_size + 1
-        proc = self.runner([
-            "yt-dlp", "--flat-playlist", "--playlist-start", str(start),
-            "--playlist-end", str(start + page_size), "--dump-json",
-            f"{source.canonical_url}/videos",
-        ])
-        if proc.returncode:
-            raise RuntimeError((proc.stderr or "yt-dlp failed").strip()[:500])
-        items = _items(proc.stdout, start - 1)
-        has_next = len(items) > page_size
-        return ScanPage(
-            items[:page_size], str(page + 1) if has_next else None,
-            exhausted=not has_next,
-        )
+        return _history(self.runner, f"{source.canonical_url}/videos", page, page_size)
 
     def _scan(self, url: str, depth: int) -> list[DiscoveredItem]:
         proc = self.runner([
@@ -133,6 +136,9 @@ class YouTubePlaylistAdapter:
 
     def scan(self, source: Source, checkpoint: str | None = None) -> ScanPage:
         return ScanPage(self._scan(source.canonical_url), is_snapshot=True)
+
+    def history(self, source: Source, page: int, page_size: int = 20) -> ScanPage:
+        return _history(self.runner, source.canonical_url, page, page_size)
 
     def _scan(self, url: str) -> list[DiscoveredItem]:
         proc = self.runner(["yt-dlp", "--flat-playlist", "--dump-json", url])

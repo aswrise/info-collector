@@ -64,7 +64,10 @@ test('source form keeps its element across async inspection', async () => {
       });
       if (path === '/api/enqueue') return response({queued: 1, skipped_synced: 0, skipped_active: 0, skipped_disabled: 0});
       return response(path === '/api/state'
-      ? {sources: [{id: 1, display_name: 'Example', source_type: 'youtube_channel', settings: {}}], items: [{
+      ? {sources: [
+          {id: 1, display_name: 'Example', source_type: 'youtube_channel', settings: {}},
+          {id: 2, display_name: 'Training Data', source_type: 'youtube_playlist', settings: {}},
+        ], items: [{
           content_key: 'youtube:queued', source_id: 1, job_id: 7,
           sync_status: 'queued', title_or_text: 'Queued video',
         }], counts: {queued: 1}}
@@ -84,6 +87,7 @@ test('source form keeps its element across async inspection', async () => {
   assert.match(get('#items').innerHTML, /data-cancel-job="7">取消同步/);
   assert.match(get('#items').innerHTML, /data-disable-key="youtube:queued"[^>]*>禁用/);
   assert.match(get('#health').innerHTML, /data-history="1">历史视频/);
+  assert.match(get('#health').innerHTML, /data-history="2">历史视频/);
 
   const historyButton = {dataset: {history: '1'}};
   documentHandlers.click({

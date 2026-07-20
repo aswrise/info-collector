@@ -49,7 +49,7 @@ async function refresh() {
       </div>
       <div class="source-meta"><span>上次扫描</span><time>${formatDate(source.last_scan_at)}</time></div>
       ${source.last_scan_error ? `<p class="source-error">${escapeHTML(source.last_scan_error)}</p>` : ""}
-      <footer class="card-actions"><button class="subtle" data-scan="${source.id}">立即扫描</button>${source.source_type === "youtube_channel" ? ` <button class="soft" data-history="${source.id}">历史视频</button>` : ""}${source.source_type === "x_list" ? ` <a class="button subtle" href="/api/sources/${source.id}/shadow" target="_blank">查看样本</a>` : ""}<button class="danger" data-delete="${source.id}">移除</button></footer>
+      <footer class="card-actions"><button class="subtle" data-scan="${source.id}">立即扫描</button>${source.source_type.startsWith("youtube_") ? ` <button class="soft" data-history="${source.id}">历史视频</button>` : ""}${source.source_type === "x_list" ? ` <a class="button subtle" href="/api/sources/${source.id}/shadow" target="_blank">查看样本</a>` : ""}<button class="danger" data-delete="${source.id}">移除</button></footer>
     </article>`;
   }).join("") || '<div class="source-empty"><strong>还没有监控来源</strong><span>添加 YouTube 频道、播放列表或 X 来源开始收集。</span></div>';
   const current = $("#source-filter").value;
