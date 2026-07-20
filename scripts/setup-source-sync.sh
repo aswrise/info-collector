@@ -4,10 +4,12 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 ROOT="$HOME/.info-collector/source-sync"
 APP="$ROOT/app"
-LABELS=(com.info-collector.source-sync-youtube com.info-collector.source-sync-x com.info-collector.source-sync-worker)
+LABELS=(com.info-collector.source-sync-cycle)
+LEGACY_LABELS=(com.info-collector.source-sync-youtube com.info-collector.source-sync-x com.info-collector.source-sync-worker)
+ALL_LABELS=("${LABELS[@]}" "${LEGACY_LABELS[@]}")
 
 if [[ "${1:-}" == "--uninstall" ]]; then
-  for label in "${LABELS[@]}"; do
+  for label in "${ALL_LABELS[@]}"; do
     plist="$HOME/Library/LaunchAgents/$label.plist"
     launchctl unload "$plist" 2>/dev/null || true
     rm -f "$plist"
@@ -40,6 +42,17 @@ for exe in pi opencli yt-dlp defuddle; do
   fi
 done
 
+for label in "${LEGACY_LABELS[@]}"; do
+  plist="$HOME/Library/LaunchAgents/$label.plist"
+  launchctl unload "$plist" 2>/dev/null || true
+  rm -f "$plist"
+done
+
+(
+  cd "$APP"
+  "$PYTHON" -m source_sync maintenance
+)
+
 for label in "${LABELS[@]}"; do
   source="$REPO/templates/$label.plist"
   target="$HOME/Library/LaunchAgents/$label.plist"
@@ -58,11 +71,6 @@ PY
   launchctl unload "$target" 2>/dev/null || true
   launchctl load "$target"
 done
-
-(
-  cd "$APP"
-  "$PYTHON" -m source_sync maintenance
-)
 
 cat <<EOF
 Source Sync 已安装。

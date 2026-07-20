@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.info-collector.source-sync-cycle</string>
+  <key>ProgramArguments</key><array><string>/usr/bin/sandbox-exec</string><string>-p</string><string>(version 1)(allow default)(deny file-read* file-write* (subpath "__HOME__/Library"))</string><string>__PYTHON__</string><string>-m</string><string>source_sync</string><string>scan</string><string>--maintenance</string></array>
+  <key>WorkingDirectory</key><string>__APP__</string>
+  <key>EnvironmentVariables</key><dict><key>HOME</key><string>__HOME__</string><key>PATH</key><string>__PATH__</string></dict>
+  <key>StartCalendarInterval</key><array><dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>0</integer></dict><dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict><dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict><dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict></array>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>__HOME__/.info-collector/source-sync/logs/cycle.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/.info-collector/source-sync/logs/cycle.error.log</string>
+</dict></plist>

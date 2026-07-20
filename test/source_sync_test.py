@@ -96,9 +96,7 @@ class SourceSyncTest(unittest.TestCase):
     def test_background_launch_agents_deny_user_library(self):
         templates = Path(__file__).parents[1] / "templates"
         for name in (
-            "com.info-collector.source-sync-worker.plist",
-            "com.info-collector.source-sync-x.plist",
-            "com.info-collector.source-sync-youtube.plist",
+            "com.info-collector.source-sync-cycle.plist",
             "com.pi.podcast-bookmarks.plist",
         ):
             with self.subTest(name=name):
@@ -108,6 +106,17 @@ class SourceSyncTest(unittest.TestCase):
                     '(deny file-read* file-write* (subpath "__HOME__/Library"))',
                     arguments[2],
                 )
+
+        cycle = plistlib.loads(
+            (templates / "com.info-collector.source-sync-cycle.plist").read_bytes()
+        )
+        self.assertEqual(cycle["ProgramArguments"][4:], [
+            "-m", "source_sync", "scan", "--maintenance",
+        ])
+        self.assertEqual(
+            [entry["Hour"] for entry in cycle["StartCalendarInterval"]],
+            [0, 6, 12, 18],
+        )
 
         for name in ("setup-pi-flow.sh", "setup-pi-podcast-flow.sh"):
             with self.subTest(name=name):
@@ -478,6 +487,41 @@ class SourceSyncTest(unittest.TestCase):
         Worker(self.registry, podcast=podcast).run()
 
         self.assertEqual(podcast.collection_subdir, "Lenny's Podcast")
+
+    def test_worker_drains_queue_with_at_most_four_active_jobs(self):
+        source = self.add_channel()
+        items = [item(f"drain-{index}", index) for index in range(7)]
+        self.registry.record_scan(source.id, ScanPage(items))
+        self.registry.enqueue([entry.content_key for entry in items], "podcast")
+
+        class Podcast:
+            def __init__(self):
+                self.lock = threading.Lock()
+                self.release = threading.Event()
+                self.started = 0
+                self.active = 0
+                self.max_active = 0
+
+            def process(self, url, _metadata, collection_subdir=None):
+                with self.lock:
+                    self.started += 1
+                    self.active += 1
+                    self.max_active = max(self.max_active, self.active)
+                    if self.started == 4:
+                        self.release.set()
+                self.release.wait(0.1)
+                with self.lock:
+                    self.active -= 1
+                return {"tldrFile": url, "collection": collection_subdir}
+
+        podcast = Podcast()
+        completed = Worker(self.registry, podcast=podcast).run()
+
+        self.assertEqual(completed, 7)
+        self.assertEqual(podcast.max_active, 4)
+        self.assertEqual(self.registry.db.execute(
+            "SELECT COUNT(*) FROM sync_jobs WHERE status IN ('queued','syncing')"
+        ).fetchone()[0], 0)
 
     def test_deleting_source_preserves_content_and_jobs(self):
         source = self.add_channel()

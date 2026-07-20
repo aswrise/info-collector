@@ -136,7 +136,7 @@ class SourceSyncHandler(SimpleHTTPRequestHandler):
                     raise ValueError("content_keys and boolean disabled are required")
                 return self._json({"updated": self.registry.set_disabled(keys, disabled)})
             if self.path == "/api/worker":
-                return self._json({"completed": Worker(self.registry).run(2)})
+                return self._json({"completed": Worker(self.registry).run()})
             if self.path == "/api/decisions":
                 keys = body.get("content_keys")
                 source_id = int(body.get("source_id"))

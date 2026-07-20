@@ -26,7 +26,7 @@ Status: implemented, migrated, and deployed.
 - `test/x_page_adapter.test.js` covers the committed OpenCLI page parser, structured media, cursor, and the 20-item ceiling.
 - Existing `test/podcast_flow_test.py` remains the compatibility gate for the Processor extraction and now proves Public Collection routing, conservative product migration, and recognition of parameterized legacy YouTube workdirs from canonical `watch?v=` URLs.
 - Plists are checked with `plutil -lint`; Base and skill YAML are parsed locally.
-- The complete local suite passes: 34 Node tests and 45 Python tests. The manual podcast installer has a regression test for selecting Python 3.10+ and re-enabling its LaunchAgent.
+- The complete local suite passes: 35 Node tests and 56 Python tests. The manual podcast installer has a regression test for selecting Python 3.10+ and re-enabling its LaunchAgent.
 - Live migration moved all 9 `result.json`-referenced podcast Markdown products into `播客收集/公共/`, updated all 9 stored paths, kept `播客收集.base` at the root, and returned 0 on an idempotency rerun.
 - The installed Source Sync database is at schema version 3 with `sync_jobs.collection_subdir` and `content_items.sync_disabled`; the updated Dashboard responds at `127.0.0.1:8787`, and the manual podcast LaunchAgent runs with the selected Homebrew Python.
 - X Likes baseline recovery scans all descendant collection folders, so re-onboarding after database/work-state loss recognizes notes already stored under `likes/` or any List folder instead of creating duplicates.
@@ -40,7 +40,7 @@ Status: implemented, migrated, and deployed.
 - `source_relationships.source_id` and `source_checkpoints.source_id` use `ON DELETE CASCADE`. The final DDL omitted cascade, but §3.4 explicitly requires deleting a Monitored Source and its relationships while preserving Content Items and Sync Jobs; cascade is the smallest FK-safe implementation of that behavior.
 - YouTube Channel scans are incremental, not authoritative snapshots. A depth-5 `/videos` response cannot prove that older Channel videos were removed; treating it as a complete snapshot would incorrectly mark every older Content Item `removed`. Playlist scans remain authoritative snapshots.
 - The OpenCLI adapter declaration uses `Strategy.COOKIE` because that is the installed OpenCLI enum, while `opencli/twitter/STRATEGY.md` records the more precise maintenance class as `PAGE_FETCH`.
-- The source-sync CLI runs the Worker immediately after scheduled scans; the standalone 30-minute Worker launchd job is the fallback. Dashboard batch enqueueing remains non-blocking instead of holding an HTTP request open for a potentially 45-minute Pi run.
+- One six-hour LaunchAgent cycle scans every source, then drains the queue with at most four concurrent jobs and immediately fills each freed slot. Dashboard batch enqueueing remains non-blocking.
 
 ## Live-source status
 
