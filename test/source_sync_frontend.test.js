@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 
+test('dashboard static assets use cache-busting URLs', () => {
+  const html = fs.readFileSync('source_sync/static/index.html', 'utf8');
+  assert.match(html, /\/style\.css\?v=[^"']+/);
+  assert.match(html, /\/app\.js\?v=[^"']+/);
+});
+
 class Element extends EventTarget {
   constructor() {
     super();
