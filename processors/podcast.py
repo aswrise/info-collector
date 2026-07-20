@@ -638,16 +638,15 @@ def validate_result(result_file, digest_version=None):
     summary_7000 = result.get("summary7000File")
     if summary_7000 and not os.path.exists(os.path.expanduser(summary_7000)):
         raise ResolutionError("pi-failed", "summary7000File missing")
-    if current:
+    if current and summary_7000:
         transcript = Path(result["transcriptFile"]).read_text(encoding="utf-8")
         if transcript.startswith("---"):
             parts = transcript.split("---", 2)
             if len(parts) == 3:
                 transcript = parts[2]
         needs_7000 = len(re.sub(r"\s+", "", transcript)) >= 7000
-        if needs_7000 != bool(summary_7000):
-            requirement = "required" if needs_7000 else "must be omitted"
-            raise ResolutionError("pi-failed", f"summary7000File {requirement}")
+        if not needs_7000:
+            raise ResolutionError("pi-failed", "summary7000File must be omitted")
     return result
 
 

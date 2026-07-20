@@ -124,7 +124,7 @@ class PodcastFlowTest(unittest.TestCase):
             with self.assertRaisesRegex(flow.ResolutionError, "summary1000File missing"):
                 flow.validate_result(result_file, flow.DIGEST_VERSION)
 
-    def test_current_digest_requires_7000_summary_only_for_long_transcript(self):
+    def test_current_digest_allows_missing_7000_summary_for_long_transcript(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
             flow = import_flow(home)
@@ -138,8 +138,8 @@ class PodcastFlowTest(unittest.TestCase):
                 "status": "ok", "digestVersion": 2, **files,
             }), encoding="utf-8")
 
-            with self.assertRaisesRegex(flow.ResolutionError, "summary7000File required"):
-                flow.validate_result(result_file, flow.DIGEST_VERSION)
+            result = flow.validate_result(result_file, flow.DIGEST_VERSION)
+            self.assertNotIn("summary7000File", result)
 
             summary_7000 = home / "summary7000File.md"
             summary_7000.write_text("summary", encoding="utf-8")

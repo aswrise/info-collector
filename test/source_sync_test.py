@@ -133,6 +133,23 @@ class SourceSyncTest(unittest.TestCase):
         self.assertEqual(state["sources"][0]["id"], source.id)
         self.assertEqual(state["items"][0]["content_key"], "youtube:dashboard")
 
+    def test_dashboard_static_assets_disable_caching(self):
+        SourceSyncHandler.db_path = self.registry.path
+        server = ThreadingHTTPServer(("127.0.0.1", 0), SourceSyncHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{server.server_port}/app.js", timeout=5
+            ) as response:
+                cache_control = response.headers.get("Cache-Control")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(cache_control, "no-store")
+
     def test_dashboard_enqueue_uses_the_selected_source_collection(self):
         playlist = self.registry.add_source(SourcePreview(
             "youtube_playlist", "https://www.youtube.com/playlist?list=PL1", "PL1",
