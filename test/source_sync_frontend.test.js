@@ -89,6 +89,11 @@ test('source form keeps its element across async inspection', async () => {
   assert.match(get('#health').innerHTML, /data-history="1">历史视频/);
   assert.match(get('#health').innerHTML, /data-history="2">历史视频/);
 
+  get('#sync-now').dispatchEvent(new Event('click'));
+  await new Promise(resolve => setImmediate(resolve));
+  const sync = requests.find(request => request.path === '/api/sync');
+  assert.equal(sync.options.method, 'POST');
+
   const historyButton = {dataset: {history: '1'}};
   documentHandlers.click({
     target: {closest: selector => selector === '[data-history]' ? historyButton : null},

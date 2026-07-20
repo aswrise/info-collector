@@ -18,7 +18,7 @@ from source_sync.adapters.youtube import (
 from source_sync.adapters.x import OpenCLIPageClient, XScanStopped, normalize_x_source
 from source_sync.registry import SourceRegistry
 from source_sync.service import SourceSyncService
-from source_sync.types import DiscoveredItem, ScanPage, SourcePreview
+from source_sync.types import DiscoveredItem, DiscoveryResult, ScanPage, SourcePreview
 from source_sync.worker import Worker
 from source_sync.runtime import Runtime
 from source_sync.server import SourceSyncHandler
@@ -142,6 +142,30 @@ class SourceSyncTest(unittest.TestCase):
             thread.join(timeout=5)
         self.assertEqual(state["sources"][0]["id"], source.id)
         self.assertEqual(state["items"][0]["content_key"], "youtube:dashboard")
+
+    def test_dashboard_immediate_sync_scans_all_sources_then_drains_queue(self):
+        first = self.add_channel()
+        second = self.add_likes()
+        SourceSyncHandler.db_path = self.registry.path
+        server = ThreadingHTTPServer(("127.0.0.1", 0), SourceSyncHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with patch.object(
+                SourceSyncService, "scan", return_value=DiscoveryResult(0, 0)
+            ) as scan, patch.object(Worker, "run", return_value=7):
+                request = urllib.request.Request(
+                    f"http://127.0.0.1:{server.server_port}/api/sync", data=b"{}",
+                    headers={"Content-Type": "application/json"}, method="POST",
+                )
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    result = json.load(response)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+        self.assertEqual([call.args[0] for call in scan.call_args_list], [first.id, second.id])
+        self.assertEqual(result, {"scanned": 2, "completed": 7})
 
     def test_dashboard_static_assets_disable_caching(self):
         SourceSyncHandler.db_path = self.registry.path

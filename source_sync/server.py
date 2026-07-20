@@ -137,6 +137,9 @@ class SourceSyncHandler(SimpleHTTPRequestHandler):
                 return self._json({"updated": self.registry.set_disabled(keys, disabled)})
             if self.path == "/api/worker":
                 return self._json({"completed": Worker(self.registry).run()})
+            if self.path == "/api/sync":
+                result = self.service.run_cycle()
+                return self._json({"scanned": len(result) - 1, "completed": result[-1]["worker_completed"]})
             if self.path == "/api/decisions":
                 keys = body.get("content_keys")
                 source_id = int(body.get("source_id"))
@@ -158,6 +161,8 @@ class SourceSyncHandler(SimpleHTTPRequestHandler):
             return self.send_error(404)
         except (KeyError, ValueError) as error:
             return self._json({"error": str(error)}, 400)
+        except RuntimeError as error:
+            return self._json({"error": str(error)}, 409)
         except Exception as error:
             return self._json({"error": str(error)}, 500)
 

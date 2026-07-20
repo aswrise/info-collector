@@ -34,6 +34,7 @@ function formatDate(value) {
 async function refresh() {
   state = await api("/api/state");
   $("#summary").innerHTML = `<span><i class="summary-dot queued"></i>队列 <strong>${state.counts.queued||0}</strong></span><span><i class="summary-dot syncing"></i>处理中 <strong>${state.counts.syncing||0}</strong></span><span><i class="summary-dot failed"></i>失败 <strong>${state.counts.failed||0}</strong></span>`;
+  $("#sync-now").disabled = Boolean(state.counts.syncing);
   $("#source-count").textContent = `${state.sources.length} 个来源`;
   $("#health").innerHTML = state.sources.map(source => {
     const running = state.runtime?.scans?.[source.id]?.outcome === "running";
@@ -271,6 +272,14 @@ $("#add-form").elements.url.addEventListener("input", event => {
   $("#preview").textContent = "";
 });
 $("#scan-all").onclick = () => act(async () => { for (const source of state.sources) await api(`/api/sources/${source.id}/scan`, {method:"POST", body:"{}"}); toast("全部扫描完成"); });
+$("#sync-now").onclick = () => {
+  $("#sync-now").disabled = true;
+  toast("已开始扫描并同步");
+  api("/api/sync", {method:"POST", body:"{}"})
+    .then(result => { toast(`本轮同步完成 ${result.completed} 条`); })
+    .catch(error => toast(error.message))
+    .finally(() => refresh().catch(error => toast(error.message)));
+};
 $("#items").onchange = event => { if (event.target.hasAttribute("data-select")) { const row = event.target.closest("tr"); const id = `${row.dataset.source}\t${row.dataset.key}`; event.target.checked ? selected.add(id) : selected.delete(id); renderItems(); } };
 $("#select-all").onchange = event => { for (const item of visibleItems()) event.target.checked ? selected.add(selectionId(item)) : selected.delete(selectionId(item)); renderItems(); };
 $("#sync-selected").onclick = () => act(async () => { const items = selectedItems().map(item => ({content_key:item.content_key, source_id:item.source_id})); const result = await api("/api/enqueue", {method:"POST", body:JSON.stringify({items})}); selected.clear(); toast(`已加入 ${result.queued} 条 · 跳过已同步 ${result.skipped_synced} 条 · 跳过排队中/处理中 ${result.skipped_active} 条 · 跳过已禁用 ${result.skipped_disabled}`); });

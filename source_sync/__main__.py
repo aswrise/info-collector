@@ -38,16 +38,7 @@ def main():
                 service.inspect(args.url), None if args.initial_sync == -1 else args.initial_sync
             )
         elif args.command == "scan":
-            sources = registry.list_sources()
-            if args.source_id:
-                sources = [registry.get_source(args.source_id)]
-            if args.platform:
-                sources = [source for source in sources if source.source_type.startswith(args.platform)]
-            ids = [source.id for source in sources]
-            result = [asdict(service.scan(source_id)) for source_id in ids]
-            result.append({"worker_completed": Worker(registry).run()})
-            if args.maintenance:
-                result.append({"backup": str(Runtime(registry.path.parent).maintenance(registry.db, registry.path))})
+            result = service.run_cycle(args.source_id, args.platform, args.maintenance)
         elif args.command == "maintenance":
             result = {"backup": str(Runtime(registry.path.parent).maintenance(registry.db, registry.path))}
         else:

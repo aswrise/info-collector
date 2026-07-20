@@ -3,6 +3,7 @@ from __future__ import annotations
 import random
 import re
 import time
+from dataclasses import asdict
 from pathlib import Path
 
 from processors.podcast import PodcastProcessor
@@ -14,6 +15,7 @@ from .adapters.x import XScanStopped
 from .registry import SourceRegistry
 from .runtime import Runtime, utc_iso
 from .types import DiscoveredItem, DiscoveryResult, SourceAdapter, SourcePreview, ScanPage
+from .worker import Worker
 
 
 class SourceSyncService:
@@ -50,6 +52,21 @@ class SourceSyncService:
             except ValueError as error:
                 errors.append(str(error))
         raise ValueError(errors[-1] if errors else "unsupported source URL")
+
+    def run_cycle(
+        self, source_id: int | None = None, platform: str | None = None, maintenance: bool = False,
+    ) -> list[dict]:
+        with self.runtime.lock("cycle"):
+            sources = self.registry.list_sources()
+            if source_id:
+                sources = [self.registry.get_source(source_id)]
+            if platform:
+                sources = [source for source in sources if source.source_type.startswith(platform)]
+            result = [asdict(self.scan(source.id)) for source in sources]
+            result.append({"worker_completed": Worker(self.registry).run()})
+            if maintenance:
+                result.append({"backup": str(self.runtime.maintenance(self.registry.db, self.registry.path))})
+            return result
 
     def youtube_history(self, source_id: int, page: int, page_size: int = 20) -> dict:
         if page < 1 or page > 10_000:
