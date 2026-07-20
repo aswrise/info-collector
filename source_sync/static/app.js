@@ -34,7 +34,7 @@ function formatDate(value) {
 async function refresh() {
   state = await api("/api/state");
   $("#summary").innerHTML = `<span><i class="summary-dot queued"></i>队列 <strong>${state.counts.queued||0}</strong></span><span><i class="summary-dot syncing"></i>处理中 <strong>${state.counts.syncing||0}</strong></span><span><i class="summary-dot failed"></i>失败 <strong>${state.counts.failed||0}</strong></span>`;
-  $("#sync-now").disabled = Boolean(state.counts.syncing);
+  $("#sync-now").disabled = Boolean(state.counts.syncing) || Object.values(state.runtime?.scans || {}).some(scan => scan.outcome === "running");
   $("#source-count").textContent = `${state.sources.length} 个来源`;
   $("#health").innerHTML = state.sources.map(source => {
     const running = state.runtime?.scans?.[source.id]?.outcome === "running";
